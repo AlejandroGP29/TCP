@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación TCP con Gestión de Usuarios</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Simulación de Máquina de Estados TCP</h1>
+
+    <div id="auth-section">
+        <h2>Registro / Iniciar Sesión</h2>
+        <input type="text" id="username" placeholder="Nombre de usuario">
+        <input type="password" id="password" placeholder="Contraseña">
+        <button onclick="register()">Registrarse</button>
+        <button onclick="login()">Iniciar Sesión</button>
+    </div>
+
+    <div id="tcp-simulation" style="display:none;">
+        <div class="node-container">
+            <h2>Nodo A</h2>
+            <p>Estado Actual: <span id="current-state-A">CLOSED</span></p>
+            <div id="transition-buttons-A"></div>
+            <div id="tcp-details-A" class="tcp-details"></div>
+            <h3>Historial de Mensajes</h3>
+            <ul id="history-list-A"></ul>
+        </div>
+    
+        <div class="node-container">
+            <h2>Nodo B</h2>
+            <p>Estado Actual: <span id="current-state-B">CLOSED</span></p>
+            <div id="transition-buttons-B"></div>
+            <div id="tcp-details-B" class="tcp-details"></div>
+            <h3>Historial de Mensajes</h3>
+            <ul id="history-list-B"></ul>
+        </div>
+        <button onclick="startMessageExchange()">Iniciar Intercambio de Mensajes</button>
+        <button onclick="stopRealtimeUpdates()">Detener Actualización</button>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
