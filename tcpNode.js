@@ -1,13 +1,13 @@
 // tcpNode.js
 const db = require("./db");
 
-class messageTCP{
+class messageTCP {
   constructor(node) {
-    this.srcPort = node.srcPort; // Puerto de origen aleatorio
-    this.destPort = node.partnerNode.srcPort; // Será asignado al asociar el nodo
-    this.seqNum = node.seqNum; // Número de secuencia inicial aleatorio
+    this.srcPort = node.srcPort;
+    this.destPort = node.partnerNode.srcPort;
+    this.seqNum = node.seqNum;
     this.ackNum = node.partnerNode.seqNum;
-    this.dataOffset = 5; // Tamaño en palabras de 32 bits (5 = 20 bytes estándar)
+    this.dataOffset = 5;
     this.reserved = 0;
     this.flags = {
       NS: false,
@@ -15,22 +15,22 @@ class messageTCP{
       ECE: false,
       URG: false,
       ACK: false,
-      PSH: false,
+      PSH: false, // Se activará cuando sea necesario
       RST: false,
       SYN: false,
       FIN: false,
     };
-    this.windowSize = node.windowSize; // Tamaño de la ventana
+    this.windowSize = node.windowSize;
     this.checksum = node.checksum;
     this.urgentPointer = 0;
-    this.options = {}; // Opciones TCP, como MSS, escalado de ventana, SACK, etc.
-    this.padding = 0; // Relleno opcional para alinear a múltiplos de 32 bits
-
+    this.options = {
+      MSS: 1460, // Tamaño MSS agregado aquí (Cambio #6)
+    };
+    this.padding = 0;
     this.message = "";
   }
-
-
 }
+
 
 class TCPNode {
   constructor(nodeId) {
@@ -45,30 +45,55 @@ class TCPNode {
       FIN_WAIT_2: "FIN_WAIT_2",
       CLOSE_WAIT: "CLOSE_WAIT",
       LAST_ACK: "LAST_ACK",
-      CLOSING:"CLOSING",
+      CLOSING: "CLOSING",
       TIME_WAIT: "TIME_WAIT",
     };
     this.state = this.states.CLOSED;
     this.partnerNode = null;
 
-     // Parámetros TCP
-     this.srcPort = Math.floor(Math.random() * 65535); // Puerto de origen aleatorio
-     this.destPort = 0; // Será asignado al asociar el nodo
-     this.seqNum = Math.floor(Math.random() * 10000); // Número de secuencia inicial aleatorio
-     this.ackNum = 0;
-     this.windowSize = 1024; // Tamaño de la ventana
-     this.checksum = this.generateChecksum();
- 
-     // Parámetros adicionales de simulación
-     this.buffer = 0; // Buffer simulado para datos entrantes
-     this.dataToSend = 0; // Datos para enviar
-     this.ttl = 64; // Time to live (valor predeterminado)
-     this.latency = Math.floor(Math.random() * 5001);
-     this.recv_data = false;
+    this.srcPort = Math.floor(Math.random() * 65535);
+    this.destPort = 0;
+    this.seqNum = Math.floor(Math.random() * 10000);
+    this.ackNum = 0;
+    this.windowSize = 1024;
+    this.checksum = this.generateChecksum();
+
+    this.buffer = 0;
+    this.ttl = 64;
+    this.latency = Math.floor(Math.random() * 5001);
+    this.MTU = 1500; // Tamaño de MTU para controlar segmentación (Cambio #3)
+  }
+
+  setNodeParameter(parameterSettings){
+    this.nodeId = parameterSettings.nodeId;
+    this.states = parameterSettings.state;
+    this.buffer = parameterSettings.buffer;
+    this.ttl = parameterSettings.ttl;
+    this.latency = parameterSettings.latency;
+    this.MTU = parameterSettings.MTU;
+    this.srcPort = parameterSettings.srcPort;
+    this.destPort = parameterSettings.destPort;
+    this.seqNum = parameterSettings.seqNum;
+    this.ackNum = parameterSettings.ackNum;
+    this.windowSize = parameterSettings.windowSize;
+    this.checksum = parameterSettings.checksum;
+    this.states = {
+      CLOSED: "CLOSED",
+      LISTEN: "LISTEN",
+      SYN_SENT: "SYN_SENT",
+      SYN_RECEIVED: "SYN_RECEIVED",
+      ESTABLISHED: "ESTABLISHED",
+      FIN_WAIT_1: "FIN_WAIT_1",
+      FIN_WAIT_2: "FIN_WAIT_2",
+      CLOSE_WAIT: "CLOSE_WAIT",
+      LAST_ACK: "LAST_ACK",
+      CLOSING: "CLOSING",
+      TIME_WAIT: "TIME_WAIT",
+    };
   }
 
 
-  transition(action, userId) {
+  transition(action, simulation_id) {
     switch (this.state) {
         case "CLOSED":
             if (action === "listen") this.state = "LISTEN";
@@ -76,7 +101,7 @@ class TCPNode {
               this.state = "SYN_SENT";
               let message = new messageTCP(this)
               message.flags.SYN = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -85,14 +110,14 @@ class TCPNode {
               this.state = "SYN_SENT";
               let message = new messageTCP(this)
               message.flags.SYN = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "recv_syn") {
               this.state = "SYN_RECEIVED";
               let message = new messageTCP(this)
               message.flags.SYN = true;
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "close") this.state = "CLOSED";
             break;
@@ -102,14 +127,14 @@ class TCPNode {
               this.state = "ESTABLISHED";
               let message = new messageTCP(this)
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "recv_syn") {
               this.state = "SYN_RECEIVED";
               let message = new messageTCP(this)
               message.flags.SYN = true;
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "close") this.state = "CLOSED";
             break;
@@ -121,7 +146,7 @@ class TCPNode {
               this.state = "FIN_WAIT_1";
               let message = new messageTCP(this)
               message.flags.FIN = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -130,13 +155,13 @@ class TCPNode {
               this.state = "FIN_WAIT_1";
               let message = new messageTCP(this)
               message.flags.FIN = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "recv_fin") {
               this.state = "CLOSE_WAIT";
               let message = new messageTCP(this)
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -146,13 +171,13 @@ class TCPNode {
               this.state = "CLOSING";
               let message = new messageTCP(this)
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             else if (action === "recv_fin_ack") {
               this.state = "TIME_WAIT";
               let message = new messageTCP(this)
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -161,7 +186,7 @@ class TCPNode {
               this.state = "TIME_WAIT";
               let message = new messageTCP(this)
               message.flags.ACK = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -174,7 +199,7 @@ class TCPNode {
               this.state = "LAST_ACK";
               let message = new messageTCP(this)
               message.flags.FIN = true;
-              this.sendMessage(message, 1, userId);
+              this.sendMessage(message, 1, simulation_id);
             }
             break;
 
@@ -194,80 +219,107 @@ class TCPNode {
     this.destPort = node.srcPort;
   }
 
-  sendData(size, user_id){
-    let datasize = Number(size)
-    let message = new messageTCP(this);
-    this.sendMessage(message, datasize, user_id);
+  sendData(size, simulation_id) {
+    let datasize = Number(size);
+    if (datasize > this.windowSize) {
+      console.log("Datos exceden el tamaño de ventana, se segmentarán.");
+      while (datasize > 0) {
+        let segmentSize = Math.min(datasize, this.windowSize, this.MTU);
+        this.buffer += segmentSize; // Agregar a buffer antes de enviar (para Nagle)
+
+        // Si el buffer es suficiente para un segmento completo, envía
+        if (this.buffer >= this.windowSize) {
+          let message = new messageTCP(this);
+          this.sendMessage(message, this.buffer, simulation_id);
+          this.buffer = 0; // Limpia el buffer después de enviar
+        }
+        datasize -= segmentSize;
+      }
+    } else {
+      let message = new messageTCP(this);
+      this.sendMessage(message, datasize, simulation_id);
+    }
   }
 
-  sendMessage(message, dataSize, userId) {
-    this.saveMessage(message, userId);
+
+  sendMessage(message, dataSize, simulation_id) {
     this.seqNum += dataSize;
+    this.saveMessage(message, simulation_id);
+    //setTimeout(() => {
+    //  if (!this.ackReceived) {
+    //    console.log("Retransmitiendo datos debido a timeout...");
+    //    this.sendMessage(message, dataSize, simulation_id); // Retransmite si no hay ACK
+    //  }
+    //}, this.latency + 10000);
     setTimeout(() => {
-      if(this.state == this.states.TIME_WAIT) this.transition("timeout", userId);
+      if(this.state == this.states.TIME_WAIT) this.transition("timeout", simulation_id);
     }, Math.floor(Math.random() * 5001));
     setTimeout(() => {
-      if (this.partnerNode) this.partnerNode.receiveMessage(message, userId);
+      if (this.partnerNode) this.partnerNode.receiveMessage(message, simulation_id);
     }, this.latency);
   }
 
-  receiveMessage(packet, userId) {
+  receiveMessage(packet, simulation_id) {
+    this.ackNum = packet.seqNum;
     if(packet.flags.SYN){
       if(packet.flags.ACK){
-        this.transition("recv_syn_ack", userId);
+        this.transition("recv_syn_ack", simulation_id);
       }
       else{
-        this.transition("recv_syn", userId);
+        this.transition("recv_syn", simulation_id);
       }
     }
     else if(packet.flags.FIN){
       if(packet.flags.ACK){
-        this.transition("recv_fin_ack", userId);
+        this.transition("recv_fin_ack", simulation_id);
       }
       else{
-        this.transition("recv_fin", userId);
+        this.transition("recv_fin", simulation_id);
       }
     }
     else if(packet.flags.ACK){
-      this.transition("recv_ack", userId);
+      this.ackReceived = true;
+      this.transition("recv_ack", simulation_id);
     }
-    this.ackNum = packet.seqNum;
-    this.recv_data = true;
   }
 
   generateChecksum() {
     return (this.srcPort + this.destPort + this.seqNum + this.ackNum + this.windowSize + this.ttl) % 65535;
   }
 
-  saveMessage(message, userId) {
+  saveMessage(message, simulationId) {
     const query = `
-      INSERT INTO TransferHistory (
-        node_id, seq_num, ack_num, data_size, message, src_port, dest_port, ttl, flags, 
-        checksum, user_id, data_offset, reserved, urgent_pointer, options, padding, 
-        window_size
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO MessageHistory (
+      simulation_id, node_id, parameter_TCP, content
+    ) VALUES (?, ?, ?, ?)
     `;
+
+    const parameters = {
+      srcPort: message.srcPort,
+      destPort: message.destPort,
+      seqNum: message.seqNum,
+      ackNum: message.ackNum,
+      dataOffset: message.dataOffset,
+      reserved: message.reserved,
+      flags: message.flags,
+      windowSize: message.windowSize,
+      checksum: message.checksum,
+      urgentPointer: message.urgentPointer,
+      options: message.options,
+      padding: message.padding,
+    };
   
     db.run(query, [
+      simulationId,
       this.nodeId,
-      message.seqNum,
-      message.ackNum,
-      message.dataOffset,  // Tamaño de la data offset
-      message.message,
-      message.srcPort,
-      message.destPort,
-      message.ttl,
-      JSON.stringify(message.flags),
-      message.checksum,
-      userId,
-      message.dataOffset,
-      message.reserved,
-      message.urgentPointer,
-      JSON.stringify(message.options),  // Convertir opciones a JSON
-      message.padding,
-      message.windowSize
+      JSON.stringify(parameters),
+      message.message
     ], (err) => {
-      if (err) console.error("Error al guardar el mensaje:", err.message);
+      if (err) {
+        console.error("Error al guardar el mensaje:", err.message);
+      } else {
+        console.log("Mensaje guardado exitosamente.");
+      }
     });
   }
 }

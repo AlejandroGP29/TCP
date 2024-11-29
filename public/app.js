@@ -3,21 +3,51 @@ let token = sessionStorage.getItem("token");
 let updateInterval;
 
 document.addEventListener("DOMContentLoaded", () => {
+    updateUserMenu();
     if (token) {
         initApp();
+        document.getElementById("auth-section").style.display = "none";
+        document.getElementById("simulation-selection").style.display = "block";
+        loadSimulations()
     }
 });
 
+function updateUserMenu() {
+    const userIcon = document.getElementById("user-icon");
+    const userDropdown = document.getElementById("user-dropdown");
+
+    if (token) {
+        userIcon.textContent = "👤";
+        userDropdown.innerHTML = `
+            <a href="#profile">Perfil</a>
+            <a href="#logout" onclick="logout()">Cerrar Sesión</a>
+        `;
+    } else {
+        userIcon.textContent = "🔓";
+        userDropdown.innerHTML = `
+            <a href="#login" onclick="showAuth()">Iniciar Sesión</a>
+            <a href="#register" onclick="showAuth()">Registrarse</a>
+        `;
+    }
+}
+
+function logout() {
+    sessionStorage.removeItem("token");
+    token = null;
+    updateUserMenu();
+    alert("Sesión cerrada.");
+}
+
+function showAuth() {
+    document.getElementById("auth-section").style.display = "block";
+    document.querySelector("main").style.display = "none";
+}
+
 function initApp() {
-    document.getElementById("auth-section").style.display = "none";
-    document.getElementById("tcp-simulation").style.display = "block";
     getState("A");
     getState("B");
     getHistory("A");
     getHistory("B");
-    updateTransitionButtons("A", "CLOSED")
-    updateTransitionButtons("B", "CLOSED")
-    startRealtimeUpdates();
 }
 
 function startRealtimeUpdates() {
@@ -27,6 +57,7 @@ function startRealtimeUpdates() {
         getState("B");
         getHistory("A");
         getHistory("B");
+        updateSimulation();
     }, 1000);
 }
 
@@ -55,8 +86,12 @@ function getHistory(nodeId) {
             const historyList = document.getElementById(`history-list-${nodeId}`);
             historyList.innerHTML = "";
             data.history.forEach(entry => {
-                const listItem = document.createElement("li");
-                listItem.textContent = `[${entry.timestamp}] Seq: ${entry.seq_num}, Ack: ${entry.ack_num}, Data Size: ${entry.data_size}, Message: ${entry.message}`;
+                const listItem = document.createElement("li"); 
+                let param = JSON.parse(entry.parameter_TCP)
+                const activeFlags = Object.entries(param.flags)
+                .filter(([key, value]) => value)
+                .map(([key]) => key);
+                listItem.textContent = `[${entry.timestamp}] Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: ${activeFlags}`;
                 historyList.appendChild(listItem);
             });
         });
@@ -149,8 +184,8 @@ function login() {
             token = data.token;
             sessionStorage.setItem("token", token);
             document.getElementById("auth-section").style.display = "none";
-            document.getElementById("tcp-simulation").style.display = "block";
-            startRealtimeUpdates();
+            document.getElementById("simulation-selection").style.display = "block";
+            loadSimulations()
         } else {
             alert(`Error: ${data.error}`);
         }
@@ -191,4 +226,81 @@ function updateTCPDetails(nodeId, tcpParams) {
         <p>Window Size: ${tcpParams.windowSize}</p>
         <p>TTL: ${tcpParams.ttl}</p>
     `;
+}
+
+function loadSimulations() {
+    fetchWithAuth('/simulations')
+        .then(response => response.json())
+        .then(data => {
+            const simulationList = document.getElementById("simulation-list");
+            simulationList.innerHTML = ""; // Limpia la lista
+            data.simulations.forEach(sim => {
+                const listItem = document.createElement("li");
+                listItem.textContent = `Simulación ${sim.id} - Parámetros: ${sim.parameter_settings}`;
+                listItem.onclick = () => selectSimulation(sim.id);
+                simulationList.appendChild(listItem);
+            });
+        })
+        .catch(() => alert("Error al cargar simulaciones."));
+}
+
+function createNewSimulation() {
+    const defaultSettings = { param1: "valor1", param2: "valor2" }; // Cambiar según lo necesario
+    fetchWithAuth('/createSimulations')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert("Nueva simulación creada.");
+            loadSimulations();
+        } else {
+            alert("Error al crear simulación.");
+        }
+    });
+}
+
+function selectSimulation(simulationId) {
+    fetchWithAuth('/enterSimulation', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ simulator_id: simulationId })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            token = data.token;
+            sessionStorage.setItem("token", token);
+            document.getElementById("simulation-selection").style.display = "none";
+            document.getElementById("tcp-simulation").style.display = "block";
+            initApp()
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    });
+    
+}
+
+function goBackToSelection() {
+    fetchWithAuth('/goBack')
+        .then(response => response.json())
+        .then(data => {
+        if (data.success) {
+            updateSimulation();
+            token = data.token;
+            sessionStorage.setItem("token", token);
+            document.getElementById("tcp-simulation").style.display = "none";
+            document.getElementById("simulation-selection").style.display = "block";
+            loadSimulations()
+            stopRealtimeUpdates()
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    });    
+}
+
+function updateSimulation(){
+    fetchWithAuth('/updateSimulations')
+        .then(response => response.json())
+        .then(data => {
+        })
+        .catch(() => alert("Error al actualizar simulaciones."));
 }

@@ -7,7 +7,71 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Simulación de Máquina de Estados TCP</h1>
+    <header>
+        <nav class="navbar">
+            <ul class="nav-links">
+                <li><a href="#main">UAB</a></li>
+                <li><a href="#definition">Definición TCP</a></li>
+                <li><a href="#connection-setup">Establecimiento de Conexión</a></li>
+                <li><a href="#data-transmission">Transmisión de Datos</a></li>
+                <li><a href="#connection-termination">Finalización de Conexión</a></li>
+            </ul>
+            <div class="user-menu">
+                <span id="user-icon"></span>
+                <div class="dropdown-content" id="user-dropdown">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+        </nav>
+    </header>
+    <main>
+        <section id="main">
+            <h1>Simulación de Máquina de Estados TCP</h1>
+            <!-- Contenido principal -->
+        </section>
+        <section id="definition" style="display: none;">
+            <h2>Definición TCP</h2>
+            <p>Información detallada sobre TCP.</p>
+        </section>
+        <section id="connection-setup" style="display: none;">
+            <h2>Establecimiento de Conexión</h2>
+            <p>Detalles del establecimiento de conexión.</p>
+        </section>
+        <section id="data-transmission" style="display: none;">
+            <h2>Transmisión de Datos</h2>
+            <p>Detalles de la transmisión de datos.</p>
+        </section>
+        <section id="connection-termination" style="display: none;">
+            <h2>Finalización de Conexión</h2>
+            <p>Detalles sobre cómo finalizar la conexión.</p>
+        </section>
+        <section id="tcp-simulation" style="display: none;">
+            <div class="node-container">
+                <h2>Nodo A</h2>
+                <p>Estado Actual: <span id="current-state-A"></span></p>
+                <div id="transition-buttons-A"></div>
+                <div id="tcp-details-A" class="tcp-details"></div>
+                <h3>Historial de Mensajes</h3>
+                <ul id="history-list-A"></ul>
+            </div>
+        
+            <div class="node-container">
+                <h2>Nodo B</h2>
+                <p>Estado Actual: <span id="current-state-B"></span></p>
+                <div id="transition-buttons-B"></div>
+                <div id="tcp-details-B" class="tcp-details"></div>
+                <h3>Historial de Mensajes</h3>
+                <ul id="history-list-B"></ul>
+            </div>
+            <button onclick="startMessageExchange()">Iniciar Intercambio de Mensajes</button>
+            <button onclick="goBackToSelection()">Volver a Selección de Simulación</button>
+        </section>
+        <section id="simulation-selection" style="display: none;">
+            <h2>Seleccionar Simulación</h2>
+            <ul id="simulation-list"></ul>
+            <button onclick="createNewSimulation()">Crear Nueva Simulación</button>
+        </section>
+    </main>
 
     <div id="auth-section">
         <h2>Registro / Iniciar Sesión</h2>
@@ -17,28 +81,6 @@
         <button onclick="login()">Iniciar Sesión</button>
     </div>
 
-    <div id="tcp-simulation" style="display:none;">
-        <div class="node-container">
-            <h2>Nodo A</h2>
-            <p>Estado Actual: <span id="current-state-A">CLOSED</span></p>
-            <div id="transition-buttons-A"></div>
-            <div id="tcp-details-A" class="tcp-details"></div>
-            <h3>Historial de Mensajes</h3>
-            <ul id="history-list-A"></ul>
-        </div>
-    
-        <div class="node-container">
-            <h2>Nodo B</h2>
-            <p>Estado Actual: <span id="current-state-B">CLOSED</span></p>
-            <div id="transition-buttons-B"></div>
-            <div id="tcp-details-B" class="tcp-details"></div>
-            <h3>Historial de Mensajes</h3>
-            <ul id="history-list-B"></ul>
-        </div>
-        <button onclick="startMessageExchange()">Iniciar Intercambio de Mensajes</button>
-        <button onclick="stopRealtimeUpdates()">Detener Actualización</button>
-    </div>
-    
     <script src="app.js"></script>
 </body>
 </html>
