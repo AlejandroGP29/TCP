@@ -97,7 +97,6 @@ app.post('/enterSimulation', authenticateToken, (req, res) => {
       nodeB.setNodeParameter(param.nodeB)
       nodeA.setPartner(nodeB)
       nodeB.setPartner(nodeA)
-      console.log(nodeA)
     }    
   });
   const token = jwt.sign({ id: req.user.id, username: req.user.username, simulation: simulator_id}, SECRET_KEY, { expiresIn: "1h" });
@@ -186,11 +185,10 @@ app.get("/state/:nodeId", authenticateToken, (req, res) => {
 });
 
 // Historial de mensajes del nodo
-app.get("/history/:nodeId", authenticateToken, (req, res) => {
+app.get("/history", authenticateToken, (req, res) => {
   try {
-    const nodeId = req.params.nodeId;
     const simulationId = req.user.simulation;
-    db.all(`SELECT * FROM MessageHistory WHERE node_id = ? AND simulation_id = ? ORDER BY timestamp`, [nodeId, simulationId], (err, rows) => {
+    db.all(`SELECT * FROM MessageHistory WHERE  simulation_id = ? ORDER BY timestamp`, [simulationId], (err, rows) => {
       if (err) return res.status(500).json({ success: false, error: "No se pudo recuperar el historial." });
       res.json({ success: true, history: rows });
     });

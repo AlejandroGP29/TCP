@@ -244,7 +244,7 @@ class TCPNode {
 
   sendMessage(message, dataSize, simulation_id) {
     this.seqNum += dataSize;
-    this.saveMessage(message, simulation_id);
+    this.saveMessage(message, dataSize, simulation_id);
     //setTimeout(() => {
     //  if (!this.ackReceived) {
     //    console.log("Retransmitiendo datos debido a timeout...");
@@ -287,10 +287,10 @@ class TCPNode {
     return (this.srcPort + this.destPort + this.seqNum + this.ackNum + this.windowSize + this.ttl) % 65535;
   }
 
-  saveMessage(message, simulationId) {
+  saveMessage(message, dataSize, simulationId) {
     const query = `
     INSERT INTO MessageHistory (
-      simulation_id, node_id, parameter_TCP, content
+      simulation_id, node_id, parameter_TCP, len
     ) VALUES (?, ?, ?, ?)
     `;
 
@@ -313,7 +313,7 @@ class TCPNode {
       simulationId,
       this.nodeId,
       JSON.stringify(parameters),
-      message.message
+      dataSize
     ], (err) => {
       if (err) {
         console.error("Error al guardar el mensaje:", err.message);

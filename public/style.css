@@ -113,3 +113,9 @@ ul {
   background-color: #e9e9e9;
 }
 
+#simulation-visual {
+  border: 1px solid #ccc;
+  margin: 20px auto;
+  display: block;
+  background-color: #f9f9f9; /* Fondo opcional para visualizar mejor */
+}

@@ -29,7 +29,7 @@ db.run(`CREATE TABLE IF NOT EXISTS MessageHistory (
   simulation_id INTEGER NOT NULL,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
   parameter_TCP JSON NOT NULL,
-  content TEXT NOT NULL,
+  len INTEGER NOT NULL,
   FOREIGN KEY (simulation_id) REFERENCES Simulations(id) ON DELETE CASCADE
 )`);
 
