@@ -1,3 +1,19 @@
+/* Estilos generales */
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  background-color: #f4f4f9;
+}
+
+ul {
+  list-style-type: none;
+  padding: 0;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/* Navegación */
 .navbar {
   display: flex;
   justify-content: space-between;
@@ -8,14 +24,8 @@
 }
 
 .nav-links {
-  list-style: none;
   display: flex;
   gap: 20px;
-  padding: 0;
-}
-
-.nav-links li {
-  display: inline;
 }
 
 .nav-links a {
@@ -28,6 +38,7 @@
   text-decoration: underline;
 }
 
+/* Menú de usuario */
 .user-menu {
   position: relative;
   cursor: pointer;
@@ -65,12 +76,7 @@
   display: block;
 }
 
-body {
-  font-family: Arial, sans-serif;
-  text-align: center;
-  background-color: #f4f4f9;
-}
-
+/* Contenedor de nodos */
 .node-container {
   display: inline-block;
   width: 45%;
@@ -79,6 +85,7 @@ body {
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 15px;
+  vertical-align: top;
 }
 
 .tcp-details {
@@ -86,18 +93,13 @@ body {
   color: #555;
 }
 
-ul {
-  list-style-type: none;
-  padding: 0;
-  font-size: 0.9em;
-  text-align: left;
+/* Selección de simulación */
+#simulation-selection {
+  margin: 20px;
 }
 
 #simulation-selection ul {
-  list-style-type: none;
   margin: 10px;
-  padding: 0;
-  text-align: left;
 }
 
 #simulation-selection li {
@@ -113,9 +115,81 @@ ul {
   background-color: #e9e9e9;
 }
 
+/* Simulación visual */
+#visual-simulation {
+  width: 100%;
+  overflow: visible;
+  height: auto;
+}
+
 #simulation-visual {
+  width: 90vw;
+  margin: auto;
   border: 1px solid #ccc;
-  margin: 20px auto;
   display: block;
-  background-color: #f9f9f9; /* Fondo opcional para visualizar mejor */
+  overflow: visible;
+  height: auto;
+}
+
+#simulation-visual svg {
+  width: 100%;
+  height: auto;
+}
+
+#simulation-visual g {
+  overflow: visible;
+}
+
+#simulation-visual text {
+  font-size: 14px;
+  fill: black;
+}
+
+#simulation-visual line {
+  stroke-width: 2px;
+}
+
+/* Autenticación */
+#auth-section {
+  text-align: center;
+  margin-top: 50px;
+}
+
+#auth-section input {
+  display: block;
+  margin: 10px auto;
+  padding: 10px;
+  width: 80%;
+  max-width: 300px;
+}
+
+#auth-section button {
+  padding: 10px 20px;
+  margin: 10px;
+}
+
+/* Botones de transición */
+.transition-buttons {
+  margin-top: 15px;
+}
+
+.transition-buttons button {
+  margin: 5px;
+}
+
+/* Responsividad */
+@media (max-width: 768px) {
+  .node-container {
+    width: 90%;
+    margin: 10px auto;
+  }
+
+  .nav-links {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #simulation-visual {
+    width: 100%;
+  }
 }
