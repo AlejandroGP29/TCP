@@ -150,7 +150,7 @@ app.post("/start-simulation", authenticateToken, (req, res) => {
         return res.status(500).json({ error: "Error al iniciar la simulación." });
       }
 
-      // Iniciar la simulación en ambos nodos con datos pendientes
+      // Reiniciar los nodos antes de iniciar la simulación
       sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
       sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
 

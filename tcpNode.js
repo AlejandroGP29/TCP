@@ -103,6 +103,12 @@ class TCPNode {
   transition(action, simulationId) {
     switch (this.state) {
       case this.states.CLOSED:
+        // Reiniciar variables al llegar a CLOSED
+        this.closing = false;
+        this.pendingDataSize = this.pendingDataSize || 0;
+        this.buffer = 0;
+        this.ackReceived = false;
+
         if (action === "start_simulation") {
           if (this.nodeId === "A") {
             // Nodo A inicia conexión
@@ -110,7 +116,7 @@ class TCPNode {
             let message = new MessageTCP(this);
             message.flags.SYN = true;
             this.sendMessage(message, 0, simulationId);
-            this.seqNum += 1; // Incrementar seqNum por SYN
+            // No incrementamos seqNum aquí; el ISN se mantiene
           } else if (this.nodeId === "B") {
             // Nodo B espera conexión
             this.state = this.states.LISTEN;
@@ -125,13 +131,16 @@ class TCPNode {
       case this.states.SYN_SENT:
         if (action === "recv_syn_ack") {
           this.state = this.states.ESTABLISHED;
-          this.ackNum = this.partnerNode.seqNum;
-          let message = new MessageTCP(this);
-          message.flags.ACK = true;
-          this.sendMessage(message, 0, simulationId);
-          // Iniciar transmisión de datos si hay datos pendientes
+          this.ackNum = this.partnerNode.seqNum + 1;
+          let ackMessage = new MessageTCP(this);
+          ackMessage.flags.ACK = true;
+          this.seqNum += 1; // Incrementamos seqNum por el SYN enviado previamente
+          this.sendMessage(ackMessage, 0, simulationId);
+          // No incrementamos seqNum aquí porque no estamos enviando datos
           if (this.pendingDataSize > 0) {
             this.transition("send_data", simulationId);
+          } else {
+            this.transition("close_connection", simulationId);
           }
         }
         break;
@@ -139,9 +148,10 @@ class TCPNode {
       case this.states.SYN_RECEIVED:
         if (action === "recv_ack") {
           this.state = this.states.ESTABLISHED;
-          // Iniciar transmisión de datos si hay datos pendientes
           if (this.pendingDataSize > 0) {
             this.transition("send_data", simulationId);
+          } else {
+            this.transition("close_connection", simulationId);
           }
         }
         break;
@@ -154,7 +164,7 @@ class TCPNode {
           // No es necesario realizar ninguna acción específica aquí
         } else if (action === "recv_fin") {
           this.state = this.states.CLOSE_WAIT;
-          this.ackNum = this.partnerNode.seqNum;
+          this.ackNum = this.partnerNode.seqNum + 1;
           let ackMessage = new MessageTCP(this);
           ackMessage.flags.ACK = true;
           this.sendMessage(ackMessage, 0, simulationId);
@@ -166,8 +176,8 @@ class TCPNode {
             this.state = this.states.FIN_WAIT_1;
             let finMessage = new MessageTCP(this);
             finMessage.flags.FIN = true;
-            this.sendMessage(finMessage, 0, simulationId);
             this.seqNum += 1; // Incrementar seqNum por FIN
+            this.sendMessage(finMessage, 0, simulationId);
           }
         }
         break;
@@ -177,7 +187,7 @@ class TCPNode {
           this.state = this.states.FIN_WAIT_2;
         } else if (action === "recv_fin") {
           this.state = this.states.CLOSING;
-          this.ackNum = this.partnerNode.seqNum;
+          this.ackNum = this.partnerNode.seqNum + 1;
           let ackMessage = new MessageTCP(this);
           ackMessage.flags.ACK = true;
           this.sendMessage(ackMessage, 0, simulationId);
@@ -187,7 +197,7 @@ class TCPNode {
       case this.states.FIN_WAIT_2:
         if (action === "recv_fin") {
           this.state = this.states.TIME_WAIT;
-          this.ackNum = this.partnerNode.seqNum;
+          this.ackNum = this.partnerNode.seqNum + 1;
           let ackMessage = new MessageTCP(this);
           ackMessage.flags.ACK = true;
           this.sendMessage(ackMessage, 0, simulationId);
@@ -213,8 +223,8 @@ class TCPNode {
             this.state = this.states.LAST_ACK;
             let finMessage = new MessageTCP(this);
             finMessage.flags.FIN = true;
-            this.sendMessage(finMessage, 0, simulationId);
             this.seqNum += 1; // Incrementar seqNum por FIN
+            this.sendMessage(finMessage, 0, simulationId);
           }
         }
         break;
@@ -278,15 +288,16 @@ class TCPNode {
     if (packet.flags.SYN && !packet.flags.ACK) {
       // Recibido SYN, enviar SYN-ACK
       this.state = this.states.SYN_RECEIVED;
-      this.ackNum = packet.seqNum;
+      this.ackNum = packet.seqNum + 1;
+      this.seqNum = Math.floor(Math.random() * 10000); // Generar ISN para el servidor
       let response = new MessageTCP(this);
       response.flags.SYN = true;
       response.flags.ACK = true;
       this.sendMessage(response, 0, simulationId);
-      this.seqNum += 1; // Incrementar seqNum por SYN-ACK
+      // No incrementamos seqNum aquí
     } else if (packet.flags.SYN && packet.flags.ACK) {
       // Recibido SYN-ACK
-      this.ackNum = packet.seqNum;
+      this.ackNum = packet.seqNum + 1;
       this.transition("recv_syn_ack", simulationId);
     } else if (packet.flags.ACK && !packet.flags.SYN && !packet.flags.FIN) {
       if (this.state === this.states.SYN_RECEIVED) {
@@ -302,25 +313,24 @@ class TCPNode {
       }
     } else if (packet.flags.FIN && !packet.flags.ACK) {
       if (
-        this.state === this.states.ESTABLISHED
-        || this.state === this.states.FIN_WAIT_1
-        || this.state === this.states.FIN_WAIT_2
+        this.state === this.states.ESTABLISHED ||
+        this.state === this.states.FIN_WAIT_1 ||
+        this.state === this.states.FIN_WAIT_2
       ) {
         this.transition("recv_fin", simulationId);
       } else if (this.state === this.states.CLOSE_WAIT) {
         // Ignorar FIN adicional
       }
     } else if (packet.flags.FIN && packet.flags.ACK) {
-      // Si se recibe un FIN y ACK juntos
       if (this.state === this.states.FIN_WAIT_1) {
         this.state = this.states.CLOSING;
-        this.ackNum = packet.seqNum;
+        this.ackNum = packet.seqNum + 1;
         let ackMessage = new MessageTCP(this);
         ackMessage.flags.ACK = true;
         this.sendMessage(ackMessage, 0, simulationId);
       } else if (this.state === this.states.ESTABLISHED) {
         this.state = this.states.CLOSE_WAIT;
-        this.ackNum = packet.seqNum;
+        this.ackNum = packet.seqNum + 1;
         let ackMessage = new MessageTCP(this);
         ackMessage.flags.ACK = true;
         this.sendMessage(ackMessage, 0, simulationId);
@@ -389,7 +399,16 @@ class TCPNode {
   }
 
   startSimulation(dataSize, simulationId) {
-    this.pendingDataSize = dataSize;
+    // Reiniciar variables al iniciar una nueva simulación
+    this.state = this.states.CLOSED;
+    this.seqNum = Math.floor(Math.random() * 10000);
+    this.ackNum = 0;
+    this.closing = false;
+    this.pendingDataSize = Number(dataSize) || 0;
+    this.ackReceived = false;
+    this.buffer = 0;
+
+    // Iniciar la transición
     this.transition("start_simulation", simulationId);
   }
 }

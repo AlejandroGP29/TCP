@@ -428,6 +428,10 @@ function startSimulation() {
   const dataSizeB = document.getElementById("data-size-input-B").value || 0;
   const windowSize = document.getElementById("window-size-input").value || 1024;
 
+  // Limpiar la visualización y los historiales antes de iniciar
+  clearVisualization();
+  clearStateHistories();
+
   fetchWithAuth("/start-simulation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
