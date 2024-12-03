@@ -1,4 +1,5 @@
 // app.js
+
 let token = sessionStorage.getItem("token");
 let updateInterval;
 
@@ -55,7 +56,7 @@ function initApp() {
   getState("A");
   getState("B");
   getHistory();
-  startRealtimeUpdates();
+  startRealtimeUpdates(); // Iniciar actualizaciones en tiempo real
 }
 
 function startRealtimeUpdates() {
@@ -78,10 +79,17 @@ function getState(nodeId) {
       const currentStateElem = document.getElementById(`current-state-${nodeId}`);
       if (currentStateElem.textContent !== data.state) {
         currentStateElem.textContent = data.state;
-        updateTransitionButtons(nodeId, data.state);
+
+        // Actualizar historial de estados
+        const stateHistoryElem = document.getElementById(`state-history-${nodeId}`);
+        const newStateItem = document.createElement("li");
+        newStateItem.textContent = data.state;
+        stateHistoryElem.appendChild(newStateItem);
       }
+
+      updateTCPParams(nodeId); // Actualizar parámetros TCP
     })
-    .catch(() => alert("Error al obtener el estado del nodo."));
+    .catch((error) => console.error("Error al obtener el estado del nodo:", error));
 }
 
 function getHistory() {
@@ -93,55 +101,8 @@ function getHistory() {
           drawMessageArrow(entry);
         }
       });
-    });
-}
-
-function updateTransitionButtons(nodeId, state) {
-  const transitions = {
-    CLOSED: ["listen", "send_syn"],
-    LISTEN: ["send_syn", "close"],
-    SYN_SENT: ["recv_syn_ack", "close"],
-    SYN_RECEIVED: ["recv_ack", "close"],
-    ESTABLISHED: ["close"],
-    CLOSE_WAIT: ["send_fin"],
-  };
-
-  const actions = transitions[state] || [];
-  const buttonContainer = document.getElementById(`transition-buttons-${nodeId}`);
-  buttonContainer.innerHTML = "";
-  buttonContainer.classList.add("transition-buttons");
-
-  actions.forEach((action) => {
-    const button = document.createElement("button");
-    button.textContent = action;
-    button.onclick = () => performTransition(nodeId, action);
-    buttonContainer.appendChild(button);
-  });
-
-  if (state === "ESTABLISHED") {
-    const input = document.createElement("input");
-    input.type = "number";
-    input.id = `data-size-input-${nodeId}`;
-    input.placeholder = "Tamaño de datos (bytes)";
-    buttonContainer.appendChild(input);
-
-    const sendButton = document.createElement("button");
-    sendButton.textContent = "Enviar";
-    sendButton.onclick = () => startMessageExchange(nodeId);
-    buttonContainer.appendChild(sendButton);
-  }
-}
-
-function performTransition(nodeId, action) {
-  fetchWithAuth(`/transition/${nodeId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action }),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      if (!data.success) alert("Error: " + data.error);
-    });
+    })
+    .catch((error) => console.error("Error al obtener el historial de mensajes:", error));
 }
 
 function fetchWithAuth(url, options = {}) {
@@ -206,19 +167,6 @@ function login() {
     });
 }
 
-function startMessageExchange(nodeId) {
-  const dataSize = document.getElementById(`data-size-input-${nodeId}`).value || 0;
-  fetchWithAuth(`/start-message-exchange/${nodeId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataSize }),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      if (!data.success) alert("Error: " + data.error);
-    });
-}
-
 function loadSimulations() {
   fetchWithAuth("/simulations")
     .then((response) => response.json())
@@ -263,6 +211,11 @@ function selectSimulation(simulationId) {
         sessionStorage.setItem("token", token);
         toggleDisplay("simulation-selection", false);
         toggleDisplay("tcp-simulation", true);
+
+        clearVisualization(); // Limpiar la visualización al entrar en una nueva simulación
+
+        clearStateHistories(); // Limpiar los historiales de estados
+
         initApp();
       } else {
         alert(`Error: ${data.error}`);
@@ -281,6 +234,7 @@ function goBackToSelection() {
         toggleDisplay("simulation-selection", true);
         loadSimulations();
         stopRealtimeUpdates();
+        clearStateHistories(); // Limpiar los historiales de estados
         clearVisualization();
       } else {
         alert(`Error: ${data.error}`);
@@ -293,6 +247,17 @@ function clearVisualization() {
   svg.selectAll("*").remove();
   messageCount = 0;
   setupVisualSimulation();
+}
+
+function clearStateHistories() {
+  const stateHistoryA = document.getElementById("state-history-A");
+  const stateHistoryB = document.getElementById("state-history-B");
+  stateHistoryA.innerHTML = "";
+  stateHistoryB.innerHTML = "";
+
+  // También restablecer el estado actual mostrado
+  document.getElementById("current-state-A").textContent = "";
+  document.getElementById("current-state-B").textContent = "";
 }
 
 function setupVisualSimulation() {
@@ -456,4 +421,40 @@ function setupArrowhead() {
     .append("path")
     .attr("d", "M 0 0 L 10 5 L 0 10 z")
     .attr("fill", "red");
+}
+
+function startSimulation() {
+  const dataSizeA = document.getElementById("data-size-input-A").value || 0;
+  const dataSizeB = document.getElementById("data-size-input-B").value || 0;
+  const windowSize = document.getElementById("window-size-input").value || 1024;
+
+  fetchWithAuth("/start-simulation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataSizeA, dataSizeB, windowSize }),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.success) {
+        // La simulación ya está en marcha, las actualizaciones en tiempo real están activas
+      } else {
+        alert("Error: " + data.error);
+      }
+    });
+}
+
+function updateTCPParams(nodeId) {
+  fetchWithAuth(`/param/${nodeId}`)
+    .then((response) => response.json())
+    .then((data) => {
+      const paramsElem = document.getElementById(`tcp-params-${nodeId}`);
+      paramsElem.innerHTML = `
+        <p>Puerto Origen: ${data.srcPort}</p>
+        <p>Puerto Destino: ${data.destPort}</p>
+        <p>Número de Secuencia: ${data.seqNum}</p>
+        <p>Número de Acknowledgment: ${data.ackNum}</p>
+        <p>Tamaño de Ventana: ${data.windowSize}</p>
+      `;
+    })
+    .catch(() => console.error("Error al obtener los parámetros TCP."));
 }

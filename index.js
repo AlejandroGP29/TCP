@@ -22,6 +22,7 @@ function initNodes(simulationId) {
   const nodeB = new TCPNode("B");
   nodeA.setPartner(nodeB);
   nodeB.setPartner(nodeA);
+  nodeB.state = nodeB.states.LISTEN; // Nodo B inicia en estado LISTEN
   simulations[simulationId] = { nodeA, nodeB };
 }
 
@@ -127,32 +128,9 @@ app.post("/enterSimulation", authenticateToken, (req, res) => {
   );
 });
 
-// Actualizar simulación
-app.post("/updateSimulations", authenticateToken, (req, res) => {
-  const simulationId = req.user.simulation;
-  const sim = simulations[simulationId];
-
-  if (!sim) {
-    return res.status(400).json({ error: "Simulación no inicializada." });
-  }
-
-  const parameter = {
-    nodeA: sim.nodeA.getParameters(),
-    nodeB: sim.nodeB.getParameters(),
-  };
-
-  const query = "UPDATE Simulations SET parameter_settings = ? WHERE id = ?";
-  db.run(query, [JSON.stringify(parameter), simulationId], (err) => {
-    if (err) {
-      return res.status(500).json({ error: "Error al actualizar la simulación." });
-    }
-    res.json({ success: true, message: "Simulación actualizada correctamente." });
-  });
-});
-
-// Transición de estado
-app.post("/transition/:nodeId", authenticateToken, (req, res) => {
-  const { action } = req.body;
+// Iniciar simulación
+app.post("/start-simulation", authenticateToken, (req, res) => {
+  const { dataSizeA, dataSizeB, windowSize } = req.body;
   const simulationId = req.user.simulation;
   const sim = simulations[simulationId];
 
@@ -161,32 +139,26 @@ app.post("/transition/:nodeId", authenticateToken, (req, res) => {
   }
 
   try {
-    const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
-    node.transition(action, simulationId);
-    res.json({ success: true });
+    sim.nodeA.windowSize = parseInt(windowSize) || 1024;
+    sim.nodeB.windowSize = parseInt(windowSize) || 1024;
+
+    // Limpiar el historial de mensajes de la simulación actual
+    const deleteQuery = "DELETE FROM MessageHistory WHERE simulation_id = ?";
+    db.run(deleteQuery, [simulationId], (err) => {
+      if (err) {
+        console.error("Error al limpiar el historial de mensajes:", err);
+        return res.status(500).json({ error: "Error al iniciar la simulación." });
+      }
+
+      // Iniciar la simulación en ambos nodos con datos pendientes
+      sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
+      sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
+
+      res.json({ success: true, message: "Simulación iniciada." });
+    });
   } catch (error) {
-    console.error("Error en la transición:", error);
-    res.status(500).json({ error: "Error al realizar la transición." });
-  }
-});
-
-// Iniciar intercambio de mensajes
-app.post("/start-message-exchange/:nodeId", authenticateToken, (req, res) => {
-  const { dataSize } = req.body;
-  const simulationId = req.user.simulation;
-  const sim = simulations[simulationId];
-
-  if (!sim) {
-    return res.status(400).json({ error: "Simulación no inicializada." });
-  }
-
-  try {
-    const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
-    node.sendData(dataSize, simulationId);
-    res.json({ success: true, message: "Intercambio de mensajes iniciado." });
-  } catch (error) {
-    console.error("Error en el intercambio:", error);
-    res.status(500).json({ error: "Error al iniciar el intercambio de mensajes." });
+    console.error("Error al iniciar la simulación:", error);
+    res.status(500).json({ error: "Error al iniciar la simulación." });
   }
 });
 

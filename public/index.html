@@ -45,21 +45,30 @@
       <p>Detalles sobre cómo finalizar la conexión.</p>
     </section>
     <section id="tcp-simulation" style="display: none;">
-      <div class="node-container">
-        <h2>Nodo A</h2>
-        <p>Estado Actual: <span id="current-state-A"></span></p>
-        <div id="transition-buttons-A"></div>
-        <div id="tcp-details-A" class="tcp-details"></div>
-        <h3>Historial de Mensajes</h3>
-        <ul id="history-list-A"></ul>
+      <h2>Simulación TCP</h2>
+      <div class="simulation-controls">
+        <label>Tamaño de Ventana (bytes):</label>
+        <input type="number" id="window-size-input" placeholder="Tamaño de ventana" value="1024">
+        <h4>Datos a Enviar</h4>
+        <label>Nodo A (bytes):</label>
+        <input type="number" id="data-size-input-A" placeholder="Cantidad de datos de Nodo A" value="0">
+        <label>Nodo B (bytes):</label>
+        <input type="number" id="data-size-input-B" placeholder="Cantidad de datos de Nodo B" value="0">
+        <button onclick="startSimulation()">Iniciar Simulación</button>
       </div>
       <div class="node-container">
-        <h2>Nodo B</h2>
+        <h3>Nodo A</h3>
+        <p>Estado Actual: <span id="current-state-A"></span></p>
+        <div id="tcp-params-A"></div>
+        <h4>Historial de Estados</h4>
+        <ul id="state-history-A"></ul>
+      </div>
+      <div class="node-container">
+        <h3>Nodo B</h3>
         <p>Estado Actual: <span id="current-state-B"></span></p>
-        <div id="transition-buttons-B"></div>
-        <div id="tcp-details-B" class="tcp-details"></div>
-        <h3>Historial de Mensajes</h3>
-        <ul id="history-list-B"></ul>
+        <div id="tcp-params-B"></div>
+        <h4>Historial de Estados</h4>
+        <ul id="state-history-B"></ul>
       </div>
       <section id="visual-simulation">
         <svg id="simulation-visual"></svg>

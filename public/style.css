@@ -55,15 +55,17 @@ ul {
 .dropdown-content {
   display: none;
   position: absolute;
+  top: 100%; /* Coloca el menú justo debajo del botón */
   right: 0;
   background-color: white;
   border: 1px solid #ddd;
   border-radius: 8px;
-  margin-top: 10px;
   padding: 10px;
   width: 150px;
   text-align: left;
+  z-index: 1000; /* Asegura que el menú esté por encima de otros elementos */
 }
+
 
 .dropdown-content a {
   display: block;
@@ -72,9 +74,11 @@ ul {
   padding: 5px 0;
 }
 
-.user-menu:hover .dropdown-content {
+.user-menu:hover .dropdown-content,
+.user-menu .dropdown-content:hover {
   display: block;
 }
+
 
 /* Contenedor de nodos */
 .node-container {
@@ -168,13 +172,18 @@ ul {
   margin: 10px;
 }
 
-/* Botones de transición */
-.transition-buttons {
-  margin-top: 15px;
+/* Controles de simulación */
+.simulation-controls {
+  margin: 20px 0;
 }
 
-.transition-buttons button {
-  margin: 5px;
+.simulation-controls input {
+  margin-right: 10px;
+  padding: 5px;
+}
+
+.simulation-controls button {
+  padding: 5px 10px;
 }
 
 /* Responsividad */
