@@ -33,22 +33,28 @@
     <section id="main">
       <div class="container">
         <h1>Simulación de Máquina de Estados TCP</h1>
-        <p>Bienvenido a la simulación interactiva del protocolo TCP, desarrollada por la Universitat Autònoma de Barcelona.</p>
+        <p>Bienvenido a la simulación interactiva del protocolo TCP.</p>
       </div>
     </section>
-    <!-- Secciones informativas -->
-    <!-- ... (puedes agregar más contenido aquí) -->
     <section id="tcp-simulation" style="display: none;">
       <div class="container">
         <h2>Simulación TCP</h2>
         <div class="simulation-controls">
           <label>Tamaño de Ventana (bytes):</label>
           <input type="number" id="window-size-input" placeholder="Tamaño de ventana" value="1024">
+          
           <h4>Datos a Enviar</h4>
           <label>Nodo A (bytes):</label>
           <input type="number" id="data-size-input-A" placeholder="Cantidad de datos de Nodo A" value="0">
           <label>Nodo B (bytes):</label>
           <input type="number" id="data-size-input-B" placeholder="Cantidad de datos de Nodo B" value="0">
+          
+          <h4>Parámetros Adicionales</h4>
+          <label>MSS (bytes):</label>
+          <input type="number" id="mss-input" placeholder="MSS" value="1460">
+          <label>Ratio de Pérdida (0 a 1):</label>
+          <input type="number" step="0.1" id="loss-ratio-input" placeholder="Ratio de pérdida" value="0">
+
           <button onclick="startSimulation()">Iniciar Simulación</button>
         </div>
         <div class="node-section">

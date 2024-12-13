@@ -20,9 +20,24 @@ let simulations = {};
 function initNodes(simulationId) {
   const nodeA = new TCPNode("A");
   const nodeB = new TCPNode("B");
+  
   nodeA.setPartner(nodeB);
   nodeB.setPartner(nodeA);
-  nodeB.state = nodeB.states.LISTEN; // Nodo B inicia en estado LISTEN
+  
+  // Nodo B inicia en estado LISTEN
+  nodeB.state = nodeB.states.LISTEN; 
+  
+  // Ajustes adicionales: MSS, Pérdida, envío simultáneo
+  nodeA.MSS = 1460;
+  nodeB.MSS = 1460;
+  nodeA.lossRatio = 0.1; // 10% de pérdida en A
+  nodeB.lossRatio = 0.05; // 5% de pérdida en B
+
+  // Para que B también envíe datos simultáneamente
+  // Se establecerán datos pendientes en ambos nodos
+  nodeA.pendingDataSize = 3000; 
+  nodeB.pendingDataSize = 3000; 
+
   simulations[simulationId] = { nodeA, nodeB };
 }
 
@@ -130,7 +145,7 @@ app.post("/enterSimulation", authenticateToken, (req, res) => {
 
 // Iniciar simulación
 app.post("/start-simulation", authenticateToken, (req, res) => {
-  const { dataSizeA, dataSizeB, windowSize } = req.body;
+  const { dataSizeA, dataSizeB, windowSize, mss, lossRatio } = req.body;
   const simulationId = req.user.simulation;
   const sim = simulations[simulationId];
 
@@ -141,6 +156,16 @@ app.post("/start-simulation", authenticateToken, (req, res) => {
   try {
     sim.nodeA.windowSize = parseInt(windowSize) || 1024;
     sim.nodeB.windowSize = parseInt(windowSize) || 1024;
+
+    // Asignar MSS y ratio de pérdida a ambos nodos
+    if (mss) {
+      sim.nodeA.MSS = parseInt(mss) || 1460;
+      sim.nodeB.MSS = parseInt(mss) || 1460;
+    }
+    if (lossRatio !== undefined) {
+      sim.nodeA.lossRatio = parseFloat(lossRatio) || 0;
+      sim.nodeB.lossRatio = parseFloat(lossRatio) || 0;
+    }
 
     // Limpiar el historial de mensajes de la simulación actual
     const deleteQuery = "DELETE FROM MessageHistory WHERE simulation_id = ?";

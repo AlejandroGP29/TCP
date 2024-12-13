@@ -1,3 +1,5 @@
+/* public/style.css */
+
 /* Estilos generales */
 body, html {
   margin: 0;
@@ -83,7 +85,7 @@ p {
 .dropdown-content {
   display: none;
   position: absolute;
-  top: 100%; /* Coloca el menú justo debajo del botón */
+  top: 100%;
   right: 0;
   background-color: #FFFFFF;
   border: 1px solid #ddd;
@@ -91,7 +93,7 @@ p {
   padding: 10px;
   width: 150px;
   text-align: left;
-  z-index: 1000; /* Asegura que el menú esté por encima de otros elementos */
+  z-index: 1000;
 }
 
 .dropdown-content a {
@@ -99,6 +101,10 @@ p {
   text-decoration: none;
   color: #006633; /* Verde UAB */
   padding: 5px 0;
+}
+
+.dropdown-content a:hover {
+  background-color: #f1f1f1;
 }
 
 .user-menu:hover .dropdown-content,
@@ -121,6 +127,7 @@ p {
   padding: 20px;
   width: 45%;
   margin-bottom: 20px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .node-container ul {
@@ -130,6 +137,12 @@ p {
 
 .node-container li {
   margin-bottom: 5px;
+  padding: 5px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.node-container li:last-child {
+  border-bottom: none;
 }
 
 /* Selección de simulación */
@@ -143,6 +156,8 @@ p {
   padding: 10px;
   margin-bottom: 10px;
   cursor: pointer;
+  border-radius: 5px;
+  transition: background-color 0.3s ease;
 }
 
 #simulation-selection li:hover {
@@ -159,6 +174,8 @@ p {
   width: 100%;
   height: auto;
   border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #fdfdfd;
 }
 
 #simulation-visual line {
@@ -175,18 +192,24 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 70px); /* Altura total menos el header */
+  height: calc(100vh - 70px);
 }
 
 #auth-section .container {
   max-width: 400px;
   text-align: center;
+  background-color: #f9f9f9;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 #auth-section input {
   width: 100%;
   padding: 10px;
   margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
 }
 
 .auth-buttons {
@@ -196,11 +219,12 @@ p {
 
 .auth-buttons button {
   padding: 10px 20px;
-  background-color: #006633; /* Verde UAB */
+  background-color: #006633; 
   color: #FFFFFF;
   border: none;
   cursor: pointer;
   border-radius: 5px;
+  transition: background-color 0.3s ease;
 }
 
 .auth-buttons button:hover {
@@ -210,12 +234,13 @@ p {
 /* Botones */
 button {
   padding: 10px 20px;
-  background-color: #006633; /* Verde UAB */
+  background-color: #006633;
   color: #FFFFFF;
   border: none;
   cursor: pointer;
   border-radius: 5px;
   margin-top: 10px;
+  transition: background-color 0.3s ease;
 }
 
 button:hover {
@@ -232,6 +257,7 @@ footer {
 
 footer p {
   margin: 0;
+  color: #666666;
 }
 
 /* Responsividad */
