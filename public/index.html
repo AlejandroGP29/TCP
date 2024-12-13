@@ -41,44 +41,62 @@
         <h2>Simulación TCP</h2>
         <div class="simulation-controls">
           <label>Tamaño de Ventana (bytes):</label>
-          <input type="number" id="window-size-input" placeholder="Tamaño de ventana" value="1024">
-          
+          <input type="number" id="window-size-input" value="1024">
           <h4>Datos a Enviar</h4>
           <label>Nodo A (bytes):</label>
-          <input type="number" id="data-size-input-A" placeholder="Cantidad de datos de Nodo A" value="0">
+          <input type="number" id="data-size-input-A" value="0">
           <label>Nodo B (bytes):</label>
-          <input type="number" id="data-size-input-B" placeholder="Cantidad de datos de Nodo B" value="0">
-          
-          <h4>Parámetros Adicionales</h4>
-          <label>MSS (bytes):</label>
-          <input type="number" id="mss-input" placeholder="MSS" value="1460">
-          <label>Ratio de Pérdida (0 a 1):</label>
-          <input type="number" step="0.1" id="loss-ratio-input" placeholder="Ratio de pérdida" value="0">
-
+          <input type="number" id="data-size-input-B" value="0">
+          <label>MSS:</label>
+          <input type="number" id="mss-input" value="1460">
+          <label>Ratio de Pérdida:</label>
+          <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0">
+          <span id="loss-ratio-value">0</span>
           <button onclick="startSimulation()">Iniciar Simulación</button>
+          <button onclick="saveState()">Guardar Estado</button>
+          <button onclick="loadState()">Cargar Estado</button>
         </div>
+
+        <div class="filters">
+          <h4>Filtros de Mensajes:</h4>
+          <label><input type="checkbox" id="filter-syn" checked>SYN</label>
+          <label><input type="checkbox" id="filter-ack" checked>ACK</label>
+          <label><input type="checkbox" id="filter-fin" checked>FIN</label>
+          <label><input type="checkbox" id="filter-data" checked>DATA</label>
+
+          <h4>Zoom Temporal:</h4>
+          <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
+          <span id="time-zoom-value">200</span>
+        </div>
+
         <div class="node-section">
           <div class="node-container">
             <h3>Nodo A</h3>
             <p>Estado Actual: <span id="current-state-A"></span></p>
             <div id="tcp-params-A"></div>
-            <h4>Historial de Estados</h4>
+            <h4>Historial de Mensajes</h4>
             <ul id="state-history-A"></ul>
           </div>
           <div class="node-container">
             <h3>Nodo B</h3>
             <p>Estado Actual: <span id="current-state-B"></span></p>
             <div id="tcp-params-B"></div>
-            <h4>Historial de Estados</h4>
+            <h4>Historial de Mensajes</h4>
             <ul id="state-history-B"></ul>
           </div>
         </div>
         <section id="visual-simulation">
-          <svg id="simulation-visual"></svg>
+          <div id="visual-container">
+            <svg id="simulation-visual"></svg>
+          </div>
+          <div id="window-chart-container">
+            <svg id="window-chart" width="800" height="200"></svg>
+          </div>
         </section>
         <button onclick="goBackToSelection()">Volver a Selección de Simulación</button>
       </div>
     </section>
+
     <section id="simulation-selection" style="display: none;">
       <div class="container">
         <h2>Seleccionar Simulación</h2>
@@ -103,6 +121,7 @@
       <p>&copy; 2024 Universitat Autònoma de Barcelona</p>
     </div>
   </footer>
+  <div class="tooltip" id="tooltip"></div>
   <script src="app.js"></script>
 </body>
 </html>

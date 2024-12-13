@@ -20,28 +20,12 @@ let simulations = {};
 function initNodes(simulationId) {
   const nodeA = new TCPNode("A");
   const nodeB = new TCPNode("B");
-  
   nodeA.setPartner(nodeB);
   nodeB.setPartner(nodeA);
-  
-  // Nodo B inicia en estado LISTEN
   nodeB.state = nodeB.states.LISTEN; 
-  
-  // Ajustes adicionales: MSS, Pérdida, envío simultáneo
-  nodeA.MSS = 1460;
-  nodeB.MSS = 1460;
-  nodeA.lossRatio = 0.1; // 10% de pérdida en A
-  nodeB.lossRatio = 0.05; // 5% de pérdida en B
-
-  // Para que B también envíe datos simultáneamente
-  // Se establecerán datos pendientes en ambos nodos
-  nodeA.pendingDataSize = 3000; 
-  nodeB.pendingDataSize = 3000; 
-
   simulations[simulationId] = { nodeA, nodeB };
 }
 
-// Middleware de autenticación
 function authenticateToken(req, res, next) {
   const token = req.headers["authorization"];
   if (!token) return res.status(401).json({ error: "Acceso denegado" });
@@ -53,11 +37,9 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Registro de usuarios
 app.post("/register", (req, res) => {
   const { username, password } = req.body;
 
-  // Validación de entradas
   if (!username || !password || password.length < 6) {
     return res
       .status(400)
@@ -75,7 +57,6 @@ app.post("/register", (req, res) => {
   });
 });
 
-// Inicio de sesión
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
 
@@ -91,7 +72,6 @@ app.post("/login", (req, res) => {
   });
 });
 
-// Obtener simulaciones del usuario
 app.get("/simulations", authenticateToken, (req, res) => {
   db.all("SELECT * FROM Simulations WHERE user_id = ?", [req.user.id], (err, rows) => {
     if (err) return res.status(500).json({ error: "Error al cargar simulaciones." });
@@ -99,7 +79,6 @@ app.get("/simulations", authenticateToken, (req, res) => {
   });
 });
 
-// Crear nueva simulación
 app.post("/createSimulations", authenticateToken, (req, res) => {
   const query = "INSERT INTO Simulations (user_id) VALUES (?)";
   db.run(query, [req.user.id], function (err) {
@@ -108,7 +87,6 @@ app.post("/createSimulations", authenticateToken, (req, res) => {
   });
 });
 
-// Entrar en una simulación
 app.post("/enterSimulation", authenticateToken, (req, res) => {
   const { simulator_id } = req.body;
 
@@ -143,7 +121,6 @@ app.post("/enterSimulation", authenticateToken, (req, res) => {
   );
 });
 
-// Iniciar simulación
 app.post("/start-simulation", authenticateToken, (req, res) => {
   const { dataSizeA, dataSizeB, windowSize, mss, lossRatio } = req.body;
   const simulationId = req.user.simulation;
@@ -157,17 +134,6 @@ app.post("/start-simulation", authenticateToken, (req, res) => {
     sim.nodeA.windowSize = parseInt(windowSize) || 1024;
     sim.nodeB.windowSize = parseInt(windowSize) || 1024;
 
-    // Asignar MSS y ratio de pérdida a ambos nodos
-    if (mss) {
-      sim.nodeA.MSS = parseInt(mss) || 1460;
-      sim.nodeB.MSS = parseInt(mss) || 1460;
-    }
-    if (lossRatio !== undefined) {
-      sim.nodeA.lossRatio = parseFloat(lossRatio) || 0;
-      sim.nodeB.lossRatio = parseFloat(lossRatio) || 0;
-    }
-
-    // Limpiar el historial de mensajes de la simulación actual
     const deleteQuery = "DELETE FROM MessageHistory WHERE simulation_id = ?";
     db.run(deleteQuery, [simulationId], (err) => {
       if (err) {
@@ -175,7 +141,13 @@ app.post("/start-simulation", authenticateToken, (req, res) => {
         return res.status(500).json({ error: "Error al iniciar la simulación." });
       }
 
-      // Reiniciar los nodos antes de iniciar la simulación
+      sim.nodeA.lossRatio = parseFloat(lossRatio) || 0;
+      sim.nodeB.lossRatio = parseFloat(lossRatio) || 0;
+      if (mss) {
+        sim.nodeA.MSS = parseInt(mss) || 1460;
+        sim.nodeB.MSS = parseInt(mss) || 1460;
+      }
+
       sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
       sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
 
@@ -187,7 +159,6 @@ app.post("/start-simulation", authenticateToken, (req, res) => {
   }
 });
 
-// Obtener estado del nodo
 app.get("/state/:nodeId", authenticateToken, (req, res) => {
   const simulationId = req.user.simulation;
   const sim = simulations[simulationId];
@@ -204,7 +175,6 @@ app.get("/state/:nodeId", authenticateToken, (req, res) => {
   }
 });
 
-// Obtener historial de mensajes
 app.get("/history", authenticateToken, (req, res) => {
   try {
     const simulationId = req.user.simulation;
@@ -221,7 +191,6 @@ app.get("/history", authenticateToken, (req, res) => {
   }
 });
 
-// Obtener parámetros del nodo
 app.get("/param/:nodeId", authenticateToken, (req, res) => {
   const simulationId = req.user.simulation;
   const sim = simulations[simulationId];
@@ -238,7 +207,6 @@ app.get("/param/:nodeId", authenticateToken, (req, res) => {
   }
 });
 
-// Volver a selección de simulación
 app.get("/goBack", authenticateToken, (req, res) => {
   const simulationId = req.user.simulation;
   delete simulations[simulationId];
@@ -247,5 +215,43 @@ app.get("/goBack", authenticateToken, (req, res) => {
   });
   res.json({ success: true, token });
 });
+
+// index.js (añadimos endpoints /saveState y /loadState)
+app.post("/saveState", authenticateToken, (req, res) => {
+  const simulationId = req.user.simulation;
+  const sim = simulations[simulationId];
+  if (!sim) return res.status(400).json({ error: "Simulación no inicializada." });
+
+  const parameter_settings = JSON.stringify({
+    nodeA: sim.nodeA.getParameters(),
+    nodeB: sim.nodeB.getParameters(),
+  });
+
+  const query = "UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?";
+  db.run(query, [parameter_settings, simulationId, req.user.id], function(err) {
+    if (err) return res.status(500).json({ error: "Error al guardar el estado." });
+    res.json({ success: true, message: "Estado guardado correctamente." });
+  });
+});
+
+app.post("/loadState", authenticateToken, (req, res) => {
+  const simulationId = req.user.simulation;
+  db.get("SELECT parameter_settings FROM Simulations WHERE id = ? AND user_id = ?", [simulationId, req.user.id], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: "No se encontró estado para esta simulación." });
+    if (!row.parameter_settings) return res.status(400).json({ error: "No hay estado guardado." });
+
+    const param = JSON.parse(row.parameter_settings);
+    const sim = simulations[simulationId];
+    if (!sim) {
+      return res.status(400).json({ error: "Simulación no inicializada." });
+    }
+
+    sim.nodeA.setNodeParameter(param.nodeA);
+    sim.nodeB.setNodeParameter(param.nodeB);
+
+    res.json({ success: true, message: "Estado cargado correctamente." });
+  });
+});
+
 
 app.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));

@@ -289,3 +289,24 @@ footer p {
     margin-bottom: 10px;
   }
 }
+
+/* Añadimos estilo para el contenedor con scroll */
+#visual-container {
+  width: 80%;
+  margin: auto;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  height: 400px; /* Ajustar según se quiera el area visible */
+}
+
+/* Tooltip */
+.tooltip {
+  position: absolute;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  padding: 5px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 5px;
+}

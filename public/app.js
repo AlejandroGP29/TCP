@@ -3,9 +3,40 @@
 let token = sessionStorage.getItem("token");
 let updateInterval;
 
+let messageData = [];
+let earliestTime;
+let latestTime;
+let messageVerticalJitter = 5;
+let timeThresholdForJitter = 200;
+let timeScale; 
+let tooltip;
+
+let windowDataA = [];
+let windowDataB = [];
+
 document.addEventListener("DOMContentLoaded", () => {
+  tooltip = d3.select("#tooltip");
   setupVisualSimulation();
   updateUserMenu();
+
+  // Filtros
+  document.getElementById("filter-syn").addEventListener("change", renderAll);
+  document.getElementById("filter-ack").addEventListener("change", renderAll);
+  document.getElementById("filter-fin").addEventListener("change", renderAll);
+  document.getElementById("filter-data").addEventListener("change", renderAll);
+
+  // Zoom temporal
+  document.getElementById("time-zoom-input").addEventListener("input", () => {
+    document.getElementById("time-zoom-value").textContent = document.getElementById("time-zoom-input").value;
+    renderAll();
+  });
+
+  // Ratio de pérdida
+  document.getElementById("loss-ratio-input").addEventListener("input", () => {
+    let val = document.getElementById("loss-ratio-input").value;
+    document.getElementById("loss-ratio-value").textContent = val;
+    // Se aplicará al iniciar una nueva simulación
+  });
 
   if (token) {
     initApp();
@@ -81,12 +112,6 @@ function getState(nodeId) {
       const currentStateElem = document.getElementById(`current-state-${nodeId}`);
       if (currentStateElem && currentStateElem.textContent !== data.state) {
         currentStateElem.textContent = data.state;
-        const stateHistoryElem = document.getElementById(`state-history-${nodeId}`);
-        if (stateHistoryElem) {
-          const newStateItem = document.createElement("li");
-          newStateItem.textContent = data.state;
-          stateHistoryElem.appendChild(newStateItem);
-        }
       }
 
       updateTCPParams(nodeId);
@@ -240,16 +265,21 @@ function clearVisualization() {
   const svg = d3.select("#simulation-visual");
   if (svg) svg.selectAll("*").remove();
   setupVisualSimulation();
+
+  const windowChart = d3.select("#window-chart");
+  if (windowChart) windowChart.selectAll("*").remove();
+  windowDataA = [];
+  windowDataB = [];
 }
 
 function clearStateHistories() {
-  const stateHistoryA = document.getElementById("state-history-A");
-  const stateHistoryB = document.getElementById("state-history-B");
+  const historyA = document.getElementById("state-history-A");
+  const historyB = document.getElementById("state-history-B");
+  if (historyA) historyA.innerHTML = "";
+  if (historyB) historyB.innerHTML = "";
+
   const currentStateA = document.getElementById("current-state-A");
   const currentStateB = document.getElementById("current-state-B");
-
-  if (stateHistoryA) stateHistoryA.innerHTML = "";
-  if (stateHistoryB) stateHistoryB.innerHTML = "";
   if (currentStateA) currentStateA.textContent = "";
   if (currentStateB) currentStateB.textContent = "";
 }
@@ -278,6 +308,36 @@ function startSimulation() {
     .catch(error => console.error("Error al iniciar simulación:", error));
 }
 
+function saveState() {
+  fetchWithAuth("/saveState", { method: "POST" })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert("Estado guardado.");
+      } else {
+        alert("Error al guardar estado: " + data.error);
+      }
+    })
+    .catch(error => console.error("Error al guardar estado:", error));
+}
+
+function loadState() {
+  fetchWithAuth("/loadState", { method: "POST" })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert("Estado cargado.");
+        // Después de cargar estado, refrescar info
+        getState("A");
+        getState("B");
+        getHistory();
+      } else {
+        alert("Error al cargar estado: " + data.error);
+      }
+    })
+    .catch(error => console.error("Error al cargar estado:", error));
+}
+
 function updateTCPParams(nodeId) {
   fetchWithAuth(`/param/${nodeId}`)
     .then(response => response.json())
@@ -295,36 +355,67 @@ function updateTCPParams(nodeId) {
           <p>sendBase: ${data.sendBase}</p>
           <p>nextSeqNum: ${data.nextSeqNum}</p>
         `;
+
+        // Guardamos el windowSize con timestamp para dibujar el gráfico
+        const now = Date.now();
+        if (nodeId === "A") {
+          windowDataA.push({time: now, windowSize: data.windowSize});
+        } else {
+          windowDataB.push({time: now, windowSize: data.windowSize});
+        }
+
+        drawWindowChart();
       }
     })
     .catch(() => console.error("Error al obtener los parámetros TCP."));
-  }
-
-// Variables para escala temporal lineal pura:
-let messageData = [];
-let earliestTime;
-let latestTime;
-let messageVerticalJitter = 5;
-let timeThresholdForJitter = 200;
-let timeScale; 
+}
 
 function getHistory() {
   fetchWithAuth(`/history`)
     .then(response => response.json())
     .then(data => {
+      if (!data.success) return;
       messageData = data.history;
       console.log("Mensajes recibidos, timestamps:", messageData.map(m => m.timestamp));
 
       if (messageData.length > 0) {
         createTimeScale(messageData);
         renderMessages(messageData);
+
+        const historyA = document.getElementById("state-history-A");
+        const historyB = document.getElementById("state-history-B");
+        if (historyA) historyA.innerHTML = "";
+        if (historyB) historyB.innerHTML = "";
+
+        messageData.forEach(msg => {
+          const param = JSON.parse(msg.parameter_TCP);
+          const activeFlags = Object.entries(param.flags)
+            .filter(([_, v]) => v)
+            .map(([k]) => k);
+          
+          const listItem = document.createElement("li");
+          listItem.textContent = `Mensaje ID:${msg.id}, Node:${msg.node_id}, Seq:${param.seqNum}, Ack:${param.ackNum}, Flags:[${activeFlags.join(", ")}], Len:${msg.len}, Latencia:${param.latency || 0}ms`;
+
+          if (msg.node_id === "A" && historyA) {
+            historyA.appendChild(listItem);
+          } else if (msg.node_id === "B" && historyB) {
+            historyB.appendChild(listItem);
+          }
+        });
+
       } else {
         const svg = d3.select("#simulation-visual");
         svg.selectAll("g[id^='message-']").remove();
+
+        const historyA = document.getElementById("state-history-A");
+        const historyB = document.getElementById("state-history-B");
+        if (historyA) historyA.innerHTML = "";
+        if (historyB) historyB.innerHTML = "";
       }
     })
     .catch(error => console.error("Error al obtener el historial de mensajes:", error));
 }
+
 
 function createTimeScale(messages) {
   let times = [];
@@ -341,10 +432,35 @@ function createTimeScale(messages) {
   earliestTime = new Date(Math.min(...times.map(t => t.getTime())));
   latestTime = new Date(Math.max(...times.map(t => t.getTime())));
 
-  // Asignamos un rango vertical enorme (20000 px) para tener un zoom gigante
+  let zoomVal = document.getElementById("time-zoom-input").value || 200;
   timeScale = d3.scaleTime()
     .domain([earliestTime, latestTime])
-    .range([50, 200]);
+    .range([50, parseInt(zoomVal)]);
+}
+
+function renderAll() {
+  if (messageData.length > 0) {
+    createTimeScale(messageData);
+    renderMessages(messageData);
+    updateSVGHeight();
+  }
+}
+
+function shouldDisplayMessage(param) {
+  const syn = document.getElementById("filter-syn").checked;
+  const ack = document.getElementById("filter-ack").checked;
+  const fin = document.getElementById("filter-fin").checked;
+  const data = document.getElementById("filter-data").checked;
+
+  const flags = param.flags;
+  let isData = param.len > 0 && !flags.SYN && !flags.FIN && !flags.ACK;
+
+  if (flags.SYN && !syn) return false;
+  if (flags.FIN && !fin) return false;
+  if (flags.ACK && !flags.SYN && !flags.FIN && param.len === 0 && !ack) return false;
+  if (isData && !data) return false;
+
+  return true;
 }
 
 function renderMessages(messages) {
@@ -353,7 +469,6 @@ function renderMessages(messages) {
 
   messages.sort((a, b) => a.startTime - b.startTime);
 
-  // Jitter para mensajes muy cercanos en tiempo de inicio
   for (let i = 0; i < messages.length; i++) {
     let offsetCount = 0;
     for (let j = 0; j < i; j++) {
@@ -366,7 +481,10 @@ function renderMessages(messages) {
   }
 
   messages.forEach(entry => {
-    drawMessageArrowRealTime(entry);
+    let param = JSON.parse(entry.parameter_TCP);
+    if (shouldDisplayMessage(param)) {
+      drawMessageArrowRealTime(entry);
+    }
   });
 
   updateSVGHeight();
@@ -398,7 +516,7 @@ function drawMessageArrowRealTime(entry) {
   else if (param.flags.ACK && !param.flags.SYN && !param.flags.FIN && param.len === 0) lineColor = "blue";
   else if (param.len > 0) lineColor = "red";
 
-  arrowGroup.append("line")
+  const line = arrowGroup.append("line")
     .attr("x1", xStart)
     .attr("y1", yStart)
     .attr("x2", xEnd)
@@ -407,7 +525,17 @@ function drawMessageArrowRealTime(entry) {
     .attr("stroke-width", 2)
     .attr("marker-end", "url(#arrowhead)");
 
-  let messageText = `Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: ${activeFlags.join(", ")}, Len: ${param.len}\nLatencia: ${param.latency || 0} ms`;
+  let messageText = `Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: ${activeFlags.join(", ")}, Len: ${param.len}, Latencia: ${param.latency || 0} ms`;
+
+  // Tooltip events
+  line.on("mouseover", (event) => {
+    tooltip.style("opacity", 1)
+      .html(messageText)
+      .style("left", (event.pageX + 5) + "px")
+      .style("top", (event.pageY + 5) + "px");
+  }).on("mouseout", () => {
+    tooltip.style("opacity", 0);
+  });
 
   const tempText = arrowGroup.append("text")
     .attr("font-size", "12px")
@@ -451,7 +579,6 @@ function updateSVGHeight() {
   const requiredHeight = maxY + 50;
   svgElement.setAttribute("height", requiredHeight);
 
-  // Ajustamos las lineas verticales A y B, y el eje de tiempo
   d3.select("#node-line-A").attr("y2", requiredHeight - 50);
   d3.select("#node-line-B").attr("y2", requiredHeight - 50);
   d3.select("#time-axis").attr("y2", requiredHeight - 50);
@@ -488,6 +615,7 @@ function updateSVGHeight() {
         .text(d3.timeFormat("%H:%M:%S.%L")(t));
     });
   }
+  drawWindowChart();
 }
 
 function setupArrowhead() {
@@ -513,7 +641,6 @@ function setupVisualSimulation() {
 
   setupArrowhead();
 
-  // Altura inicial, se ajustará con updateSVGHeight
   svg.attr("height", 400);
 
   svg.append("line")
@@ -560,11 +687,90 @@ function setupVisualSimulation() {
     .attr("y2", 350)
     .attr("stroke", "gray")
     .attr("stroke-width", 1);
+}
 
-  svg.append("text")
-    .attr("x", 30)
-    .attr("y", 40)
-    .attr("text-anchor", "end")
-    .attr("font-size", "12px")
-    .text("Tiempo");
+function drawWindowChart() {
+  const windowChart = d3.select("#window-chart");
+  if (!windowChart.node()) return;
+
+  windowChart.selectAll("*").remove();
+
+  // Creamos escalas
+  const timesA = windowDataA.map(d => d.time);
+  const timesB = windowDataB.map(d => d.time);
+  const allTimes = timesA.concat(timesB);
+  if (allTimes.length === 0) return;
+
+  const minT = d3.min(allTimes);
+  const maxT = d3.max(allTimes);
+  const maxW = Math.max(d3.max(windowDataA, d => d.windowSize) || 0, d3.max(windowDataB, d => d.windowSize) || 0);
+
+  const xScale = d3.scaleTime()
+    .domain([new Date(minT), new Date(maxT)])
+    .range([50, 750]);
+
+  const yScale = d3.scaleLinear()
+    .domain([0, maxW || 1])
+    .range([150, 50]);
+
+  const lineA = d3.line()
+    .x(d => xScale(new Date(d.time)))
+    .y(d => yScale(d.windowSize));
+
+  const lineB = d3.line()
+    .x(d => xScale(new Date(d.time)))
+    .y(d => yScale(d.windowSize));
+
+  windowChart.append("line")
+    .attr("x1", 50)
+    .attr("y1", 150)
+    .attr("x2", 750)
+    .attr("y2", 150)
+    .attr("stroke", "#ccc");
+
+  windowChart.append("text")
+    .attr("x", 400)
+    .attr("y", 180)
+    .attr("text-anchor", "middle")
+    .text("Evolución de Window Size");
+
+  if (windowDataA.length > 0) {
+    windowChart.append("path")
+      .datum(windowDataA)
+      .attr("d", lineA)
+      .attr("stroke", "blue")
+      .attr("fill", "none");
+
+    windowChart.append("text")
+      .attr("x", 60)
+      .attr("y", 60)
+      .attr("fill", "blue")
+      .text("Nodo A WindowSize");
+  }
+
+  if (windowDataB.length > 0) {
+    windowChart.append("path")
+      .datum(windowDataB)
+      .attr("d", lineB)
+      .attr("stroke", "green")
+      .attr("fill", "none");
+
+    windowChart.append("text")
+      .attr("x", 60)
+      .attr("y", 80)
+      .attr("fill", "green")
+      .text("Nodo B WindowSize");
+  }
+
+  // Ejes
+  const xAxis = d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat("%H:%M:%S"));
+  const yAxis = d3.axisLeft(yScale).ticks(5);
+
+  windowChart.append("g")
+    .attr("transform", "translate(0,150)")
+    .call(xAxis);
+
+  windowChart.append("g")
+    .attr("transform", "translate(50,0)")
+    .call(yAxis);
 }
