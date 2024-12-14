@@ -1,5 +1,3 @@
-// app.js
-
 let token = sessionStorage.getItem("token");
 let updateInterval;
 
@@ -16,35 +14,96 @@ let windowDataB = [];
 
 document.addEventListener("DOMContentLoaded", () => {
   tooltip = d3.select("#tooltip");
+  console.log("DOMContentLoaded - iniciando router, updateUserMenu, etc.");
+  
+  initRouter();
   setupVisualSimulation();
   updateUserMenu();
+  updateMainViewButtons();
+  updateProfileView();
+  setupHamburgerMenu();
 
-  // Filtros
-  document.getElementById("filter-syn").addEventListener("change", renderAll);
-  document.getElementById("filter-ack").addEventListener("change", renderAll);
-  document.getElementById("filter-fin").addEventListener("change", renderAll);
-  document.getElementById("filter-data").addEventListener("change", renderAll);
+  document.getElementById("filter-syn")?.addEventListener("change", renderAll);
+  document.getElementById("filter-ack")?.addEventListener("change", renderAll);
+  document.getElementById("filter-fin")?.addEventListener("change", renderAll);
+  document.getElementById("filter-data")?.addEventListener("change", renderAll);
 
-  // Zoom temporal
-  document.getElementById("time-zoom-input").addEventListener("input", () => {
-    document.getElementById("time-zoom-value").textContent = document.getElementById("time-zoom-input").value;
-    renderAll();
-  });
+  const zoomInput = document.getElementById("time-zoom-input");
+  if (zoomInput) {
+    zoomInput.addEventListener("input", () => {
+      document.getElementById("time-zoom-value").textContent = zoomInput.value;
+      renderAll();
+    });
+  }
 
-  // Ratio de pérdida
-  document.getElementById("loss-ratio-input").addEventListener("input", () => {
-    let val = document.getElementById("loss-ratio-input").value;
-    document.getElementById("loss-ratio-value").textContent = val;
-    // Se aplicará al iniciar una nueva simulación
-  });
+  const lossRatioInput = document.getElementById("loss-ratio-input");
+  if (lossRatioInput) {
+    lossRatioInput.addEventListener("input", () => {
+      let val = lossRatioInput.value;
+      document.getElementById("loss-ratio-value").textContent = val;
+    });
+  }
 
   if (token) {
+    console.log("Ya hay un token guardado, iniciando la app...");
     initApp();
-    toggleDisplay("auth-section", false);
+    toggleDisplay("login", false);
+    toggleDisplay("register", false);
     toggleDisplay("simulation-selection", true);
     loadSimulations();
+  } else {
+    console.log("No hay token, el usuario no ha iniciado sesión.");
   }
 });
+
+function initRouter() {
+  console.log("Iniciando router...");
+  window.addEventListener('hashchange', showViewFromHash);
+  showViewFromHash();
+}
+
+function showViewFromHash() {
+  let hash = window.location.hash.replace('#', '');
+  if (!hash) {
+    hash = 'main';
+  }
+  console.log("Cambió hash a:", hash);
+
+  // Comprobar si se intenta acceder a la sección 'simulation-selection' sin estar logueado
+  if (hash === 'simulation-selection' && !token) {
+    // Usuario no logueado, redireccionar a la vista 'main' o 'login'
+    alert("Debes iniciar sesión para acceder a la selección de simulaciones.");
+    window.location.hash = 'login';
+    return; // salir de la función para evitar continuar con vista no permitida
+  }
+
+  const views = document.querySelectorAll('.view');
+  views.forEach(view => view.classList.remove('active'));
+
+  const targetView = document.getElementById(hash);
+  if (targetView) {
+    targetView.classList.add('active');
+    console.log("Vista activa:", hash);
+  } else {
+    console.log("No se encontró la vista para el hash:", hash);
+  }
+
+  updateMainViewButtons();
+  updateProfileView();
+  updateAriaCurrent(hash);
+}
+
+
+function updateAriaCurrent(hash) {
+  const navLinks = document.querySelectorAll('.nav-links a[data-hash]');
+  navLinks.forEach(link => {
+    if (link.getAttribute('data-hash') === hash) {
+      link.setAttribute('aria-current', 'page');
+    } else {
+      link.removeAttribute('aria-current');
+    }
+  });
+}
 
 function toggleDisplay(elementId, show) {
   const el = document.getElementById(elementId);
@@ -65,27 +124,74 @@ function updateUserMenu() {
     } else {
       userIcon.textContent = "🔓";
       userDropdown.innerHTML = `
-        <a href="#login" onclick="showAuth()">Iniciar Sesión</a>
-        <a href="#register" onclick="showAuth()">Registrarse</a>
+        <a href="#login">Iniciar Sesión</a>
+        <a href="#register">Registrarse</a>
       `;
     }
   }
 }
 
+function updateMainViewButtons() {
+  const mainActionButtons = document.getElementById("main-action-buttons");
+  const welcomeMessage = document.getElementById("welcome-message");
+  if (!mainActionButtons || !welcomeMessage) return;
+  
+  mainActionButtons.innerHTML = "";
+  
+  if (token) {
+    const username = sessionStorage.getItem("username");
+    welcomeMessage.innerHTML = `<h2>Bienvenido${username ? ', ' + username : ''}!</h2><p>Ya puedes acceder a tus simulaciones guardadas.</p>`;
+    
+    const btn = document.createElement("button");
+    btn.textContent = "Ir a Selección de Simulación";
+    btn.onclick = () => {
+      window.location.hash = "simulation-selection";
+    };
+    mainActionButtons.appendChild(btn);
+  } else {
+    welcomeMessage.innerHTML = `<h2>Bienvenido a la Simulación TCP</h2><p>Por favor, inicia sesión o regístrate para comenzar.</p>`;
+    
+    const btnLogin = document.createElement("button");
+    btnLogin.textContent = "Iniciar Sesión";
+    btnLogin.onclick = () => {
+      window.location.hash = "login";
+    };
+    mainActionButtons.appendChild(btnLogin);
+
+    const btnRegister = document.createElement("button");
+    btnRegister.textContent = "Registrarse";
+    btnRegister.onclick = () => {
+      window.location.hash = "register";
+    };
+    mainActionButtons.appendChild(btnRegister);
+  }
+}
+
+function updateProfileView() {
+  const profileContainer = document.getElementById("profile-container");
+  if (!profileContainer) return;
+
+  if (token && sessionStorage.getItem("username")) {
+    profileContainer.innerHTML = `
+      <p>Estás conectado como: <strong>${sessionStorage.getItem("username")}</strong></p>
+      <p>Puedes añadir datos extras sobre tu perfil aquí...</p>
+    `;
+  } else {
+    profileContainer.innerHTML = `<p>No has iniciado sesión. <a href="#login">Iniciar Sesión</a></p>`;
+  }
+}
+
 function logout() {
+  console.log("Cerrando sesión...");
   sessionStorage.removeItem("token");
+  sessionStorage.removeItem("username");
   token = null;
   updateUserMenu();
-  alert("Sesión cerrada.");
   location.reload();
 }
 
-function showAuth() {
-  toggleDisplay("auth-section", true);
-  toggleDisplay("main-content", false);
-}
-
 function initApp() {
+  console.log("initApp() - Iniciando la aplicación, llamando a getState y getHistory periódicamente.");
   getState("A");
   getState("B");
   getHistory();
@@ -93,6 +199,7 @@ function initApp() {
 }
 
 function startRealtimeUpdates() {
+  console.log("startRealtimeUpdates() - Iniciando intervalo cada 1s para getState y getHistory.");
   stopRealtimeUpdates();
   updateInterval = setInterval(() => {
     getState("A");
@@ -105,95 +212,128 @@ function stopRealtimeUpdates() {
   if (updateInterval) clearInterval(updateInterval);
 }
 
-function getState(nodeId) {
-  fetchWithAuth(`/state/${nodeId}`)
-    .then(response => response.json())
-    .then(data => {
-      const currentStateElem = document.getElementById(`current-state-${nodeId}`);
-      if (currentStateElem && currentStateElem.textContent !== data.state) {
-        currentStateElem.textContent = data.state;
-      }
+async function login() {
+  const username = document.getElementById("username")?.value.trim();
+  const password = document.getElementById("password")?.value.trim();
 
-      updateTCPParams(nodeId);
-    })
-    .catch(error => console.error("Error al obtener el estado del nodo:", error));
-}
+  if (!username || !password) {
+    alert("Por favor, completa todos los campos.");
+    return;
+  }
 
-function fetchWithAuth(url, options = {}) {
-  options.headers = { ...options.headers, Authorization: token };
-  return fetch(url, options).then(response => {
-    if (response.status === 401) {
-      alert("Sesión expirada. Inicia sesión nuevamente.");
-      sessionStorage.removeItem("token");
-      stopRealtimeUpdates();
-      location.reload();
+  console.log("Haciendo login con:", username);
+  try {
+    const response = await fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await response.json();
+    console.log("Respuesta login:", data);
+    if (data.success) {
+      token = data.token;
+      sessionStorage.setItem("token", token);
+      sessionStorage.setItem("username", username);
+      window.location.hash = "simulation-selection";
+      updateUserMenu();
+      updateMainViewButtons();
+      updateProfileView();
+      loadSimulations();
+      initApp();
+    } else {
+      alert(`Error: ${data.error}`);
     }
-    return response;
-  });
+  } catch (error) {
+    console.error("Error en login:", error);
+  }
 }
 
-function register() {
-  const username = document.getElementById("username")?.value.trim();
-  const password = document.getElementById("password")?.value.trim();
+async function registerUser() {
+  const usernameReg = document.getElementById("username-reg")?.value.trim();
+  const passwordReg = document.getElementById("password-reg")?.value.trim();
 
-  if (!username || !password) {
+  if (!usernameReg || !passwordReg) {
     alert("Por favor, completa todos los campos.");
     return;
   }
 
-  fetch("/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  })
-    .then(response => response.json())
-    .then(data => {
-      alert(data.success ? "Usuario registrado correctamente." : `Error: ${data.error}`);
-    })
-    .catch(error => console.error("Error en registro:", error));
+  console.log("Registrando usuario:", usernameReg);
+  try {
+    const response = await fetch("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: usernameReg, password: passwordReg }),
+    });
+    const data = await response.json();
+    console.log("Respuesta register:", data);
+    if (data.success) {
+      alert("Usuario registrado correctamente. Iniciando sesión automáticamente...");
+
+      // Una vez registrado con éxito, hacemos login automático:
+      await autoLogin(usernameReg, passwordReg);
+
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  } catch (error) {
+    console.error("Error en registro:", error);
+  }
 }
 
-function login() {
-  const username = document.getElementById("username")?.value.trim();
-  const password = document.getElementById("password")?.value.trim();
-
-  if (!username || !password) {
-    alert("Por favor, completa todos los campos.");
-    return;
+async function autoLogin(username, password) {
+  console.log("autoLogin con:", username);
+  try {
+    const response = await fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await response.json();
+    console.log("Respuesta autoLogin:", data);
+    if (data.success) {
+      token = data.token;
+      sessionStorage.setItem("token", token);
+      sessionStorage.setItem("username", username);
+      window.location.hash = "simulation-selection";
+      updateUserMenu();
+      updateMainViewButtons();
+      updateProfileView();
+      loadSimulations();
+      initApp();
+    } else {
+      alert(`Error al iniciar sesión automáticamente: ${data.error}`);
+    }
+  } catch (error) {
+    console.error("Error en autoLogin:", error);
   }
+}
 
-  fetch("/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        token = data.token;
-        sessionStorage.setItem("token", token);
-        toggleDisplay("auth-section", false);
-        toggleDisplay("simulation-selection", true);
-        updateUserMenu();
-        loadSimulations();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    })
-    .catch(error => console.error("Error en login:", error));
+
+function loginWithGoogle() {
+  alert("Google Sign-In pendiente de implementación.");
+}
+
+function registerWithGoogle() {
+  alert("Google Sign-Up pendiente de implementación.");
 }
 
 function loadSimulations() {
+  console.log("Cargando simulaciones...");
   fetchWithAuth("/simulations")
     .then(response => response.json())
     .then(data => {
+      console.log("Simulaciones:", data);
       const simulationList = document.getElementById("simulation-list");
       if (simulationList) {
         simulationList.innerHTML = "";
         data.simulations.forEach(sim => {
           const listItem = document.createElement("li");
           listItem.textContent = `Simulación ${sim.id}`;
-          listItem.onclick = () => selectSimulation(sim.id);
+          listItem.setAttribute("tabindex","0");
+          listItem.addEventListener("click", () => selectSimulation(sim.id));
+          listItem.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") selectSimulation(sim.id);
+          });
           simulationList.appendChild(listItem);
         });
       }
@@ -202,11 +342,13 @@ function loadSimulations() {
 }
 
 function createNewSimulation() {
+  console.log("Creando nueva simulación...");
   fetchWithAuth("/createSimulations", {
     method: "POST",
   })
     .then(response => response.json())
     .then(data => {
+      console.log("Respuesta createSimulations:", data);
       if (data.success) {
         alert("Nueva simulación creada.");
         loadSimulations();
@@ -218,6 +360,7 @@ function createNewSimulation() {
 }
 
 function selectSimulation(simulationId) {
+  console.log("Seleccionando simulación:", simulationId);
   fetchWithAuth("/enterSimulation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -225,15 +368,24 @@ function selectSimulation(simulationId) {
   })
     .then(response => response.json())
     .then(data => {
+      console.log("Respuesta enterSimulation:", data);
       if (data.success) {
         token = data.token;
         sessionStorage.setItem("token", token);
-        toggleDisplay("simulation-selection", false);
-        toggleDisplay("tcp-simulation", true);
+        sessionStorage.setItem("currentSimulationId", simulationId);
 
+        window.location.hash = "tcp-simulation";
         clearVisualization();
         clearStateHistories();
         initApp();
+
+        const started = sessionStorage.getItem("sim_" + simulationId + "_started");
+        if (started === "true") {
+          showPostSimulation();
+        } else {
+          showPreSimulation(); // Aquí se mostrarán parámetros y se habilitarán
+        }
+
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -241,15 +393,18 @@ function selectSimulation(simulationId) {
     .catch(error => console.error("Error al entrar en simulación:", error));
 }
 
+
+
 function goBackToSelection() {
+  console.log("Volviendo a la selección de simulaciones...");
   fetchWithAuth("/goBack")
     .then(response => response.json())
     .then(data => {
+      console.log("Respuesta goBack:", data);
       if (data.success) {
         token = data.token;
         sessionStorage.setItem("token", token);
-        toggleDisplay("tcp-simulation", false);
-        toggleDisplay("simulation-selection", true);
+        window.location.hash = "simulation-selection";
         loadSimulations();
         stopRealtimeUpdates();
         clearStateHistories(); 
@@ -262,6 +417,7 @@ function goBackToSelection() {
 }
 
 function clearVisualization() {
+  console.log("Limpiando visualización...");
   const svg = d3.select("#simulation-visual");
   if (svg) svg.selectAll("*").remove();
   setupVisualSimulation();
@@ -273,6 +429,7 @@ function clearVisualization() {
 }
 
 function clearStateHistories() {
+  console.log("Limpiando historiales de estado...");
   const historyA = document.getElementById("state-history-A");
   const historyB = document.getElementById("state-history-B");
   if (historyA) historyA.innerHTML = "";
@@ -285,12 +442,14 @@ function clearStateHistories() {
 }
 
 function startSimulation() {
+  const simulationId = sessionStorage.getItem("currentSimulationId");
   const dataSizeA = document.getElementById("data-size-input-A")?.value || 0;
   const dataSizeB = document.getElementById("data-size-input-B")?.value || 0;
   const windowSize = document.getElementById("window-size-input")?.value || 1024;
   const mss = document.getElementById("mss-input")?.value || 1460;
   const lossRatio = document.getElementById("loss-ratio-input")?.value || 0;
 
+  console.log(`Iniciando simulación con: A=${dataSizeA} B=${dataSizeB} W=${windowSize} MSS=${mss} loss=${lossRatio}`);
   clearVisualization();
   clearStateHistories();
 
@@ -301,41 +460,56 @@ function startSimulation() {
   })
     .then(response => response.json())
     .then(data => {
+      console.log("Respuesta start-simulation:", data);
       if (!data.success) {
         alert("Error: " + data.error);
+      } else {
+        // Marcar esta simulación como iniciada
+        if (simulationId) {
+          sessionStorage.setItem("sim_" + simulationId + "_started", "true");
+        }
+
+        // Deshabilitar inputs y botón iniciar
+        const startBtn = document.getElementById("start-simulation-btn");
+        if (startBtn) startBtn.disabled = true;
+
+        const inputs = [
+          "window-size-input",
+          "data-size-input-A",
+          "data-size-input-B",
+          "mss-input",
+          "loss-ratio-input"
+        ];
+        inputs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = true;
+        });
+
+        // Cambiamos a vista post-simulación
+        showPostSimulation();
+
+        setTimeout(() => {
+          console.log("Reforzando actualización de historial tras iniciar simulación...");
+          getHistory();
+        }, 2000);
       }
     })
     .catch(error => console.error("Error al iniciar simulación:", error));
 }
 
-function saveState() {
-  fetchWithAuth("/saveState", { method: "POST" })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        alert("Estado guardado.");
-      } else {
-        alert("Error al guardar estado: " + data.error);
-      }
-    })
-    .catch(error => console.error("Error al guardar estado:", error));
-}
 
-function loadState() {
-  fetchWithAuth("/loadState", { method: "POST" })
+
+function getState(nodeId) {
+  fetchWithAuth(`/state/${nodeId}`)
     .then(response => response.json())
     .then(data => {
-      if (data.success) {
-        alert("Estado cargado.");
-        // Después de cargar estado, refrescar info
-        getState("A");
-        getState("B");
-        getHistory();
-      } else {
-        alert("Error al cargar estado: " + data.error);
+      const currentStateElem = document.getElementById(`current-state-${nodeId}`);
+      if (currentStateElem && currentStateElem.textContent !== data.state) {
+        currentStateElem.textContent = data.state;
       }
+      updateTCPParams(nodeId);
     })
-    .catch(error => console.error("Error al cargar estado:", error));
+    .catch(error => console.error("Error al obtener el estado del nodo:", error));
 }
 
 function updateTCPParams(nodeId) {
@@ -356,7 +530,6 @@ function updateTCPParams(nodeId) {
           <p>nextSeqNum: ${data.nextSeqNum}</p>
         `;
 
-        // Guardamos el windowSize con timestamp para dibujar el gráfico
         const now = Date.now();
         if (nodeId === "A") {
           windowDataA.push({time: now, windowSize: data.windowSize});
@@ -371,14 +544,31 @@ function updateTCPParams(nodeId) {
 }
 
 function getHistory() {
+  console.log("Llamando a getHistory()...");
   fetchWithAuth(`/history`)
     .then(response => response.json())
     .then(data => {
+      console.log("Respuesta /history:", data);
       if (!data.success) return;
+
       messageData = data.history;
-      console.log("Mensajes recibidos, timestamps:", messageData.map(m => m.timestamp));
 
       if (messageData.length > 0) {
+        messageData.forEach(m => {
+          const isoDate = m.timestamp.replace(' ', 'T');
+          m.startTime = new Date(isoDate);
+          if (isNaN(m.startTime.getTime())) {
+            console.warn("Fecha inválida, usando fecha actual:", m.timestamp, isoDate);
+            m.startTime = new Date();
+          }
+
+          const param = JSON.parse(m.parameter_TCP);
+          let latency = param.latency || 0;
+          m.arrivalTime = new Date(m.startTime.getTime() + latency);
+        });
+
+        console.log("Fechas parseadas:", messageData.map(m => m.startTime));
+
         createTimeScale(messageData);
         renderMessages(messageData);
 
@@ -392,9 +582,9 @@ function getHistory() {
           const activeFlags = Object.entries(param.flags)
             .filter(([_, v]) => v)
             .map(([k]) => k);
-          
+
           const listItem = document.createElement("li");
-          listItem.textContent = `Mensaje ID:${msg.id}, Node:${msg.node_id}, Seq:${param.seqNum}, Ack:${param.ackNum}, Flags:[${activeFlags.join(", ")}], Len:${msg.len}, Latencia:${param.latency || 0}ms`;
+          listItem.textContent = `Seq:${param.seqNum}, Ack:${param.ackNum}, Flags:[${activeFlags.join(", ")}], Len:${msg.len}`;
 
           if (msg.node_id === "A" && historyA) {
             historyA.appendChild(listItem);
@@ -404,6 +594,7 @@ function getHistory() {
         });
 
       } else {
+        console.log("No hay mensajes en el historial.");
         const svg = d3.select("#simulation-visual");
         svg.selectAll("g[id^='message-']").remove();
 
@@ -416,15 +607,10 @@ function getHistory() {
     .catch(error => console.error("Error al obtener el historial de mensajes:", error));
 }
 
-
 function createTimeScale(messages) {
+  console.log("createTimeScale() - Calculando escala temporal...");
   let times = [];
-  
   messages.forEach(m => {
-    let param = JSON.parse(m.parameter_TCP);
-    m.startTime = new Date(m.timestamp);
-    let latency = param.latency || 0; 
-    m.arrivalTime = new Date(m.startTime.getTime() + latency);
     times.push(m.startTime);
     times.push(m.arrivalTime);
   });
@@ -432,36 +618,41 @@ function createTimeScale(messages) {
   earliestTime = new Date(Math.min(...times.map(t => t.getTime())));
   latestTime = new Date(Math.max(...times.map(t => t.getTime())));
 
-  let zoomVal = document.getElementById("time-zoom-input").value || 200;
+  if (earliestTime.getTime() === latestTime.getTime()) {
+    latestTime = new Date(earliestTime.getTime() + 1000);
+    console.log("earliestTime y latestTime iguales, ajustando rango.");
+  }
+
+  let zoomVal = document.getElementById("time-zoom-input")?.value || 200;
   timeScale = d3.scaleTime()
     .domain([earliestTime, latestTime])
     .range([50, parseInt(zoomVal)]);
 }
 
-function renderAll() {
-  if (messageData.length > 0) {
-    createTimeScale(messageData);
-    renderMessages(messageData);
-    updateSVGHeight();
-  }
-}
-
-function shouldDisplayMessage(param) {
-  const syn = document.getElementById("filter-syn").checked;
-  const ack = document.getElementById("filter-ack").checked;
-  const fin = document.getElementById("filter-fin").checked;
-  const data = document.getElementById("filter-data").checked;
+function shouldDisplayMessage(entry, param) {
+  const syn = document.getElementById("filter-syn")?.checked;
+  const ack = document.getElementById("filter-ack")?.checked;
+  const fin = document.getElementById("filter-fin")?.checked;
+  const data = document.getElementById("filter-data")?.checked;
 
   const flags = param.flags;
-  let isData = param.len > 0 && !flags.SYN && !flags.FIN && !flags.ACK;
-
+  const isData = (entry.len > 0 && !flags.SYN && !flags.FIN && !flags.ACK);
+  
+  // Filtra SYN
   if (flags.SYN && !syn) return false;
+
+  // Filtra FIN
   if (flags.FIN && !fin) return false;
-  if (flags.ACK && !flags.SYN && !flags.FIN && param.len === 0 && !ack) return false;
+
+  // Filtra ACK puro (ACK sin SYN, sin FIN y sin datos)
+  if (flags.ACK && !flags.SYN && !flags.FIN && entry.len === 0 && !ack) return false;
+
+  // Filtra Data
   if (isData && !data) return false;
 
   return true;
 }
+
 
 function renderMessages(messages) {
   const svg = d3.select("#simulation-visual");
@@ -482,7 +673,8 @@ function renderMessages(messages) {
 
   messages.forEach(entry => {
     let param = JSON.parse(entry.parameter_TCP);
-    if (shouldDisplayMessage(param)) {
+    // Antes se llamaba shouldDisplayMessage(param), ahora pasamos entry, param
+    if (shouldDisplayMessage(entry, param)) {
       drawMessageArrowRealTime(entry);
     }
   });
@@ -490,14 +682,13 @@ function renderMessages(messages) {
   updateSVGHeight();
 }
 
+
 function drawMessageArrowRealTime(entry) {
   const svg = d3.select("#simulation-visual");
   const arrowGroup = svg.append("g").attr("id", `message-${entry.id}`);
 
   let param = JSON.parse(entry.parameter_TCP);
-  const activeFlags = Object.entries(param.flags)
-    .filter(([_, value]) => value)
-    .map(([key]) => key);
+  const activeFlags = Object.entries(param.flags).filter(([_, v]) => v).map(([k]) => k);
 
   const isA = entry.node_id === "A";
   const xA = 200;
@@ -510,11 +701,22 @@ function drawMessageArrowRealTime(entry) {
   const xEnd = isA ? xB : xA;
 
   let lineColor = "red";
-  if (param.flags.SYN && param.flags.ACK) lineColor = "green";
-  else if (param.flags.SYN) lineColor = "green";
-  else if (param.flags.FIN) lineColor = "orange";
-  else if (param.flags.ACK && !param.flags.SYN && !param.flags.FIN && param.len === 0) lineColor = "blue";
-  else if (param.len > 0) lineColor = "red";
+
+  // Ajustar condición para ACK puro (sin SYN/FIN, len = 0)
+  if (param.flags.SYN && param.flags.ACK) {
+    lineColor = "green";
+  } else if (param.flags.SYN) {
+    lineColor = "green";
+  } else if (param.flags.FIN) {
+    lineColor = "orange";
+  } else if (param.flags.ACK && !param.flags.SYN && !param.flags.FIN && entry.len === 0) {
+    lineColor = "blue";
+  } else if (entry.len > 0) {
+    lineColor = "red";
+  }
+
+  // Actualizar texto, usando entry.len en vez de param.len y sin latencia
+  let messageText = `Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: [${activeFlags.join(", ")}], Len: ${entry.len}`;
 
   const line = arrowGroup.append("line")
     .attr("x1", xStart)
@@ -525,16 +727,15 @@ function drawMessageArrowRealTime(entry) {
     .attr("stroke-width", 2)
     .attr("marker-end", "url(#arrowhead)");
 
-  let messageText = `Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: ${activeFlags.join(", ")}, Len: ${param.len}, Latencia: ${param.latency || 0} ms`;
-
-  // Tooltip events
   line.on("mouseover", (event) => {
     tooltip.style("opacity", 1)
+      .attr("data-visible", "true")
       .html(messageText)
       .style("left", (event.pageX + 5) + "px")
       .style("top", (event.pageY + 5) + "px");
   }).on("mouseout", () => {
-    tooltip.style("opacity", 0);
+    tooltip.style("opacity", 0)
+      .attr("data-visible", "false");
   });
 
   const tempText = arrowGroup.append("text")
@@ -568,13 +769,13 @@ function drawMessageArrowRealTime(entry) {
     .text(messageText);
 }
 
+
 function updateSVGHeight() {
   const svgElement = document.getElementById("simulation-visual");
   const lines = d3.selectAll("#simulation-visual line").nodes();
 
   const maxY = d3.max(lines, line =>
-    Math.max(parseFloat(line.getAttribute("y1")), parseFloat(line.getAttribute("y2")))
-  ) || 400;
+    Math.max(parseFloat(line.getAttribute("y1")), parseFloat(line.getAttribute("y2")))) || 400;
 
   const requiredHeight = maxY + 50;
   svgElement.setAttribute("height", requiredHeight);
@@ -695,7 +896,6 @@ function drawWindowChart() {
 
   windowChart.selectAll("*").remove();
 
-  // Creamos escalas
   const timesA = windowDataA.map(d => d.time);
   const timesB = windowDataB.map(d => d.time);
   const allTimes = timesA.concat(timesB);
@@ -762,7 +962,6 @@ function drawWindowChart() {
       .text("Nodo B WindowSize");
   }
 
-  // Ejes
   const xAxis = d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat("%H:%M:%S"));
   const yAxis = d3.axisLeft(yScale).ticks(5);
 
@@ -774,3 +973,66 @@ function drawWindowChart() {
     .attr("transform", "translate(50,0)")
     .call(yAxis);
 }
+
+function fetchWithAuth(url, options = {}) {
+  options.headers = { ...options.headers, Authorization: token };
+  console.log("fetchWithAuth:", url, options);
+  return fetch(url, options).then(response => {
+    if (response.status === 401) {
+      alert("Sesión expirada. Inicia sesión nuevamente.");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("username");
+      stopRealtimeUpdates();
+      location.reload();
+    }
+    return response;
+  });
+}
+
+function setupHamburgerMenu() {
+  const menuToggle = document.querySelector('.menu-toggle');
+  const navLinks = document.querySelector('.nav-links');
+  if (menuToggle && navLinks) {
+    menuToggle.addEventListener('click', () => {
+      navLinks.classList.toggle('show');
+    });
+  }
+}
+
+function showPreSimulation() {
+  const preSim = document.getElementById("pre-simulation");
+  const postSim = document.getElementById("post-simulation");
+  if (preSim) preSim.style.display = "block";
+  if (postSim) postSim.style.display = "none";
+
+  const simulationId = sessionStorage.getItem("currentSimulationId");
+  const started = sessionStorage.getItem("sim_" + simulationId + "_started");
+
+  // Si no está iniciada, habilitar campos y botón
+  if (started !== "true") {
+    const inputs = [
+      "window-size-input",
+      "data-size-input-A",
+      "data-size-input-B",
+      "mss-input",
+      "loss-ratio-input"
+    ];
+    inputs.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.disabled = false; // Rehabilita campos
+      }
+    });
+
+    const startBtn = document.getElementById("start-simulation-btn");
+    if (startBtn) startBtn.disabled = false;
+  }
+}
+
+function showPostSimulation() {
+  const preSim = document.getElementById("pre-simulation");
+  const postSim = document.getElementById("post-simulation");
+  if (preSim) preSim.style.display = "none";
+  if (postSim) postSim.style.display = "block";
+}
+

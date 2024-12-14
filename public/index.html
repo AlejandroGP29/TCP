@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,118 +9,373 @@
 </head>
 <body>
   <header>
-    <nav class="navbar">
-      <div class="container">
+    <a href="#main" class="skip-link">Saltar al contenido principal</a>
+    <nav class="navbar" aria-label="Navegación principal" role="navigation">
+      <div class="navbar-container">
         <div class="brand">
-          <img src="uab-logo.png" alt="UAB Logo" class="logo">
-          <span>Universitat Autònoma de Barcelona</span>
+          <a href="#main" class="brand-link">
+            <span class="brand-text">Universitat Autònoma de Barcelona</span>
+          </a>
         </div>
-        <ul class="nav-links">
-          <li><a href="#main">Inicio</a></li>
-          <li><a href="#definition">Definición TCP</a></li>
-          <li><a href="#connection-setup">Establecimiento de Conexión</a></li>
-          <li><a href="#data-transmission">Transmisión de Datos</a></li>
-          <li><a href="#connection-termination">Finalización de Conexión</a></li>
+        <button class="menu-toggle" aria-label="Mostrar u ocultar menú">☰</button>
+        <ul class="nav-links" role="menubar" aria-label="Menú principal">
+          <li><a href="#main" role="menuitem" data-hash="main">Inicio</a></li>
+          <li><a href="#definition" role="menuitem" data-hash="definition">Definición TCP</a></li>
+          <li><a href="#connection-setup" role="menuitem" data-hash="connection-setup">Establecimiento</a></li>
+          <li><a href="#data-transmission" role="menuitem" data-hash="data-transmission">Transmisión</a></li>
+          <li><a href="#connection-termination" role="menuitem" data-hash="connection-termination">Finalización</a></li>
+          <li><a href="#simulation-selection" role="menuitem" data-hash="simulation-selection">Simulation</a></li>
         </ul>
-        <div class="user-menu">
-          <span id="user-icon"></span>
-          <div class="dropdown-content" id="user-dropdown"></div>
+        <div class="user-menu" aria-label="Menú de usuario">
+          <span id="user-icon" aria-label="Icono de usuario" class="user-icon">👤</span>
+          <div class="dropdown-content" id="user-dropdown">
+            <a href="#profile">Perfil</a>
+            <a href="#login">Iniciar Sesión</a>
+            <a href="#register">Registrarse</a>
+          </div>
         </div>
       </div>
     </nav>
   </header>
-  <main id="main-content">
-    <section id="main">
-      <div class="container">
-        <h1>Simulación de Máquina de Estados TCP</h1>
-        <p>Bienvenido a la simulación interactiva del protocolo TCP.</p>
+
+  <div id="loader" aria-hidden="true"><div class="spinner"></div></div>
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <main>
+    <!-- MAIN -->
+    <section id="main" class="view active">
+      <div class="hero">
+        <div class="hero-text">
+          <h1>Simulación de Máquina de Estados TCP</h1>
+          <p>Explora y comprende el protocolo TCP en acción</p>
+        </div>
       </div>
-    </section>
-    <section id="tcp-simulation" style="display: none;">
       <div class="container">
-        <h2>Simulación TCP</h2>
-        <div class="simulation-controls">
-          <label>Tamaño de Ventana (bytes):</label>
-          <input type="number" id="window-size-input" value="1024">
-          <h4>Datos a Enviar</h4>
-          <label>Nodo A (bytes):</label>
-          <input type="number" id="data-size-input-A" value="0">
-          <label>Nodo B (bytes):</label>
-          <input type="number" id="data-size-input-B" value="0">
-          <label>MSS:</label>
-          <input type="number" id="mss-input" value="1460">
-          <label>Ratio de Pérdida:</label>
-          <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0">
-          <span id="loss-ratio-value">0</span>
-          <button onclick="startSimulation()">Iniciar Simulación</button>
-          <button onclick="saveState()">Guardar Estado</button>
-          <button onclick="loadState()">Cargar Estado</button>
-        </div>
+        <div id="welcome-message"></div>
+        <p>Esta herramienta te permitirá:</p>
+        <ul>
+          <li>Entender el three-way handshake (SYN, SYN-ACK, ACK)</li>
+          <li>Observar transmisión ordenada, control de flujo y congestión</li>
+          <li>Ver la finalización de la conexión (FIN/ACK, TIME-WAIT)</li>
+          <li>Guardar simulaciones para análisis académico</li>
+        </ul>
+        <p><strong>¿Por qué TCP?</strong> Comprender TCP es entender el pilar fundamental de la comunicación confiable en Internet, esencial en entornos académicos e investigativos.</p>
+        <button onclick="window.location.hash='definition'" class="secondary-btn">Saber más sobre TCP</button>
 
-        <div class="filters">
-          <h4>Filtros de Mensajes:</h4>
-          <label><input type="checkbox" id="filter-syn" checked>SYN</label>
-          <label><input type="checkbox" id="filter-ack" checked>ACK</label>
-          <label><input type="checkbox" id="filter-fin" checked>FIN</label>
-          <label><input type="checkbox" id="filter-data" checked>DATA</label>
+        <h3>¿Cómo empezar?</h3>
+        <ol class="getting-started-steps">
+          <li>👤 Inicia sesión o regístrate.</li>
+          <li>📁 Selecciona o crea una simulación.</li>
+          <li>⚙️ Configura parámetros y presiona "Iniciar Simulación".</li>
+          <li>👁️ Observa mensajes y estados para entender el comportamiento de TCP.</li>
+        </ol>
 
-          <h4>Zoom Temporal:</h4>
-          <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
-          <span id="time-zoom-value">200</span>
-        </div>
+        <h4>Requisitos previos</h4>
+        <ul>
+          <li>Nociones básicas de redes e IP</li>
+          <li>Familiaridad con el intercambio SYN, ACK de TCP</li>
+        </ul>
 
-        <div class="node-section">
-          <div class="node-container">
-            <h3>Nodo A</h3>
-            <p>Estado Actual: <span id="current-state-A"></span></p>
-            <div id="tcp-params-A"></div>
-            <h4>Historial de Mensajes</h4>
-            <ul id="state-history-A"></ul>
-          </div>
-          <div class="node-container">
-            <h3>Nodo B</h3>
-            <p>Estado Actual: <span id="current-state-B"></span></p>
-            <div id="tcp-params-B"></div>
-            <h4>Historial de Mensajes</h4>
-            <ul id="state-history-B"></ul>
-          </div>
-        </div>
-        <section id="visual-simulation">
-          <div id="visual-container">
-            <svg id="simulation-visual"></svg>
-          </div>
-          <div id="window-chart-container">
-            <svg id="window-chart" width="800" height="200"></svg>
-          </div>
-        </section>
-        <button onclick="goBackToSelection()">Volver a Selección de Simulación</button>
+        <div id="main-action-buttons"></div>
       </div>
     </section>
 
-    <section id="simulation-selection" style="display: none;">
+    <!-- DEFINICIÓN TCP -->
+    <section id="definition" class="view">
+      <div class="container">
+        <h2>Definición de TCP</h2>
+        <h3>¿Qué es TCP?</h3>
+        <p>El <strong>Transmission Control Protocol (TCP)</strong> es uno de los protocolos centrales que sustentan el funcionamiento de Internet. Se trata de un protocolo de transporte confiable y orientado a conexión que se utiliza sobre la capa de red IP. Si piensas en Internet como un sistema postal, IP sería el servicio básico de entrega de paquetes (sin muchas garantías), mientras que TCP actuaría como un mensajero privado que garantiza que tus paquetes se entreguen en orden y completos.</p>
+        <p>A diferencia de protocolos sin conexión como UDP, TCP establece una relación más formal entre emisor y receptor antes de transferir datos, asegurando una comunicación robusta. Es como si, antes de empezar a hablar, ambos interlocutores se aseguraran de que se escuchan claramente y acordaran un ritmo cómodo de conversación.</p>
+    
+        <h3>¿Por qué es tan importante TCP?</h3>
+        <ul>
+          <li><strong>Fiabilidad:</strong> TCP garantiza que los datos no se pierdan. Si un paquete no llega, se retransmite. Esto es esencial para aplicaciones como la web (HTTP), correo electrónico (SMTP) o transferencia de archivos (FTP).</li>
+          <li><strong>Orden:</strong> Los datos llegan en el mismo orden en que se enviaron. TCP reordena paquetes si es necesario, dando al receptor un flujo coherente de información.</li>
+          <li><strong>Control de Flujo:</strong> Ajusta la velocidad a la que se envían datos en función de lo que el receptor pueda procesar, evitando "inundaciones" que puedan saturar la recepción.</li>
+          <li><strong>Control de Congestión:</strong> TCP detecta cuándo la red está muy ocupada y reduce su tasa de envío para no agravar la situación. Esto beneficia a todos los usuarios que comparten la red.</li>
+          <li><strong>Orientado a Conexión:</strong> Antes de enviar datos, se establece una conexión lógica entre emisor y receptor mediante un intercambio inicial de paquetes de sincronización (SYN/ACK). Esto asegura que ambas partes estén listas para comunicar datos.</li>
+        </ul>
+    
+        <h3>Rol de TCP en la Pila de Protocolos</h3>
+        <pre class="code-block">
+    Aplicaciones (HTTP, SMTP, FTP...)
+             |
+            TCP  <-- Añade fiabilidad, control de flujo y congestión
+             |
+            IP   <-- Transporte "best-effort", no confiable
+             |
+    Capa Enlace / Física (Ethernet, Wi-Fi...)
+        </pre>
+        <p>TCP funciona encima de IP, que es "best-effort" (no garantiza entrega). TCP añade fiabilidad y control, construyendo un transporte robusto para que las aplicaciones no tengan que preocuparse por paquetes perdidos o desordenados.</p>
+    
+        <h3>Un Poco de Historia</h3>
+        <p>TCP fue definido originalmente en el RFC 793 (publicado en 1981). Desde entonces, ha evolucionado con múltiples mejoras y extensiones. Este protocolo ha permitido la escalabilidad de Internet, haciendo posibles servicios que requieren integridad de datos, como el streaming de video, banca en línea o videoconferencias.</p>
+    
+        <h3>Referencias</h3>
+        <ul>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc793" target="_blank">RFC 793 - TCP</a> (documento base)</li>
+          <li>Kurose & Ross, "Computer Networking: A Top-Down Approach"</li>
+          <li>Tanenbaum & Wetherall, "Computer Networks"</li>
+          <li>Artículos y cursos en línea sobre fundamentos de protocolos de red.</li>
+        </ul>
+      </div>
+    </section>
+    
+    <!-- ESTABLECIMIENTO DE CONEXIÓN -->
+    <section id="connection-setup" class="view">
+      <div class="container">
+        <h2>Establecimiento de Conexión</h2>
+        <h3>Three-Way Handshake</h3>
+        <p>Imagínate que quieres tener una conversación telefónica con alguien. Antes de empezar a hablar de un tema importante, ambos se saludan y confirman que pueden escucharse bien, ¿verdad? El <strong>three-way handshake</strong> (intercambio de tres mensajes) en TCP funciona de manera similar. Es un protocolo que asegura que ambas partes (cliente y servidor) estén preparadas para comunicarse y sepan cómo sincronizar sus contadores de secuencia.</p>
+        <ol class="getting-started-steps">
+          <li><strong>SYN:</strong> El cliente envía un mensaje al servidor indicando "Quiero iniciar una conexión" y propone un número de secuencia inicial.</li>
+          <li><strong>SYN-ACK:</strong> El servidor responde con un mensaje que a la vez acepta la conexión (SYN) y confirma la recepción del mensaje del cliente (ACK).</li>
+          <li><strong>ACK:</strong> Finalmente, el cliente responde con un ACK para confirmar la respuesta del servidor. Ahora ambos han acordado cómo iniciarán la transmisión de datos.</li>
+        </ol>
+        <pre class="code-block">
+    Cliente --SYN--> Servidor
+    Servidor --SYN-ACK--> Cliente
+    Cliente --ACK--> Servidor
+    
+    Conexión Establecida
+        </pre>
+        <p>Este proceso garantiza que ambos extremos conozcan los números de secuencia iniciales del otro, evitando confusiones y asegurando que los datos no se mezclen con comunicaciones previas.</p>
+    
+        <h3>Analogía Sencilla</h3>
+        <p>Piensa en dos personas saludándose con un apretón de manos:  
+        - Persona A extiende la mano (SYN),  
+        - Persona B extiende su mano y asiente con la cabeza (SYN-ACK),  
+        - Persona A asiente también con la cabeza (ACK).  
+        Ahora ambos están listos para conversar. Esta preparación previa evita que uno empiece a hablar cuando el otro no está listo, o que se malinterpreten mensajes.</p>
+      </div>
+    </section>
+    
+
+    <!-- TRANSMISIÓN DE DATOS -->
+    <section id="data-transmission" class="view">
+      <div class="container">
+        <h2>Transmisión de Datos</h2>
+        <h3>Control de Flujo</h3>
+        <p>El <strong>control de flujo</strong> es como acordar una velocidad cómoda para una conversación. Si hablas demasiado rápido, tu interlocutor no podrá seguirte. De igual forma, TCP usa la "ventana de recepción" declarada por el receptor para que el emisor no envíe más datos de los que el otro lado puede procesar. Así, se garantiza que el receptor no se desborde y pierda información.</p>
+    
+        <h3>Control de Congestión</h3>
+        <p>La red es un recurso compartido. Si muchos envían datos a la vez sin regulación, se produce congestión (como un atasco en una autopista). TCP ajusta dinámicamente su tasa de envío según las condiciones de la red. Empezará enviando pocos datos y, si no hay pérdidas, irá aumentando gradualmente la ventana de congestión. Si detecta pérdidas (señal de congestión), reduce el ritmo. Esto permite compartir el ancho de banda de forma justa.</p>
+    
+        <h3>Retransmisiones y Temporizadores</h3>
+        <p>Si un paquete se pierde, TCP lo retransmite. Para determinar cuándo retransmitir, TCP calcula un <em>timeout</em> basado en el tiempo de ida y vuelta (RTT). Ajustar correctamente este temporizador evita retransmisiones prematuras (que aumentarían el tráfico innecesariamente) y muy tardías (que afectarían el rendimiento).</p>
+    
+        <h3>Ventana Deslizante</h3>
+        <p>TCP utiliza un mecanismo de ventana deslizante para administrar la transmisión:  
+        <pre class="code-block">
+    [Enviado y ACK][ En Vuelo (no ACK) ][Aún por Enviar]
+        </pre>
+        Cuando el receptor envía ACKs, la ventana se "mueve", permitiendo al emisor enviar más datos. Así se mantiene un equilibrio dinámico entre la velocidad de envío y la capacidad real de la red y el receptor.</p>
+    
+        <h3>Analogías para Entenderlo Mejor</h3>
+        <ul>
+          <li><strong>Control de Flujo:</strong> Imagina que estás sirviendo agua a un vaso (receptor). No viertes el agua muy rápido o derramarás. Ajustas el chorro según la capacidad del vaso.</li>
+          <li><strong>Control de Congestión:</strong> Si en una carretera (la red) hay mucho tráfico, disminuyes la velocidad. Si la vía está despejada, aceleras. TCP hace lo mismo con los datos.</li>
+        </ul>
+      </div>
+    </section>
+    
+
+    <!-- FINALIZACIÓN -->
+    <section id="connection-termination" class="view">
+      <div class="container">
+        <h2>Finalización de Conexión</h2>
+        <h3>Proceso de Cierre</h3>
+        <p>Al igual que iniciaste la conversación con un saludo, es importante cerrarla ordenadamente. La finalización de TCP se realiza mediante el intercambio de mensajes FIN y ACK. Cada extremo indica que ya no tiene más datos que enviar, pero escucha un momento más por si el otro todavía tiene datos en vuelo.</p>
+        <ol class="getting-started-steps">
+          <li>➡️ FIN: Uno de los extremos dice "He terminado de hablar".</li>
+          <li>➡️ ACK: El otro extremo confirma "He entendido que terminaste".</li>
+          <li>➡️ FIN: Ahora el otro lado indica también que no tiene más datos.</li>
+          <li>➡️ ACK: Finalmente, se confirma el cierre mutuo.</li>
+        </ol>
+        <pre class="code-block">
+    FIN-WAIT-1 -> FIN-WAIT-2 -> TIME-WAIT -> CLOSED
+        </pre>
+        <p>El estado <strong>TIME-WAIT</strong> asegura que cualquier mensaje retrasado en la red no se confunda con una nueva conexión. Es como esperar unos segundos después de colgar el teléfono para asegurarte de que la otra persona también colgó y no se oyen más voces o ecos.</p>
+      </div>
+    </section>    
+
+    <!-- PERFIL DE USUARIO -->
+    <section id="profile" class="view">
+      <div class="container">
+        <h2>Perfil de Usuario</h2>
+        <p>Define tu rol académico. Esto añade contexto a las simulaciones, ayudándote a centrar el análisis en aspectos relevantes a tu función (estudiante, profesor, investigador).</p>
+        <div class="center-content margin-bottom-20">
+          <div class="avatar-circle">👤</div>
+        </div>
+        <div id="profile-container"></div>
+      </div>
+    </section>
+
+    <!-- SELECCIÓN DE SIMULACIÓN -->
+    <section id="simulation-selection" class="view">
       <div class="container">
         <h2>Seleccionar Simulación</h2>
-        <ul id="simulation-list"></ul>
-        <button onclick="createNewSimulation()">Crear Nueva Simulación</button>
+        <p>Crea nuevas simulaciones o utiliza trazas reales para un análisis más profundo. Esto te permite comparar escenarios teóricos con condiciones reales capturadas en la red, enriqueciendo el aprendizaje.</p>
+
+        <div id="simulation-list-container" class="simulation-list-container">
+          <ul id="simulation-list" class="simulation-list"></ul>
+        </div>
+
+        <button onclick="createNewSimulation()" class="secondary-btn">Crear Nueva Simulación</button>
+
+        <h3>Cargar Simulación desde Archivo Wireshark</h3>
+        <p>Arrastra un .pcap o .pcapng, o selecciona el archivo:</p>
+
+        <div id="wireshark-upload" class="upload-zone" ondragover="event.preventDefault();" ondrop="handleFileDrop(event);">
+          <p><strong>Arrastra tu archivo aquí</strong> o haz clic para seleccionar uno.</p>
+          <input type="file" id="wireshark-file-input" accept=".pcap,.pcapng" onchange="handleFileInputChange(event);">
+          <button type="button" onclick="document.getElementById('wireshark-file-input').click()" class="secondary-btn">Seleccionar Archivo</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SIMULACIÓN TCP -->
+    <section id="tcp-simulation" class="view">
+      <div class="container">
+        <h2>Simulación TCP</h2>
+    
+        <!-- PRE-SIMULATION VIEW -->
+        <div id="pre-simulation">
+          <p>Ajusta parámetros y luego inicia la simulación.</p>
+          <h3>Parámetros de Simulación</h3>
+          <ul class="param-list">
+            <li><strong>Tamaño Ventana (bytes):</strong> <input type="number" id="window-size-input" value="1024"></li>
+            <li><strong>Datos Nodo A (bytes):</strong> <input type="number" id="data-size-input-A" value="1000"></li>
+            <li><strong>Datos Nodo B (bytes):</strong> <input type="number" id="data-size-input-B" value="0"></li>
+            <li><strong>MSS:</strong> <input type="number" id="mss-input" value="1460"></li>
+            <li><strong>Ratio de Pérdida:</strong> 
+              <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0"> 
+              <span id="loss-ratio-value">0</span>
+            </li>
+          </ul>
+    
+          <h3>Controles</h3>
+          <button id="start-simulation-btn" onclick="startSimulation()">Iniciar Simulación</button>
+          <button onclick="goBackToSelection()" class="secondary-btn">Volver a Selección de Simulaciones</button>
+        </div>
+    
+        <!-- POST-SIMULATION VIEW -->
+        <div id="post-simulation" style="display:none;">
+          <p>La simulación está en marcha. Observa el intercambio de mensajes y la evolución de la conexión.</p>
+    
+          <h3>Historial de Mensajes</h3>
+          <div class="history-container">
+            <div>
+              <h4>Nodo A</h4>
+              <ul id="state-history-A" class="message-list"></ul>
+            </div>
+            <div>
+              <h4>Nodo B</h4>
+              <ul id="state-history-B" class="message-list"></ul>
+            </div>
+          </div>
+    
+          <h3>Visualización</h3>
+          <p>El diagrama temporal muestra cómo evoluciona la conexión. Ajusta el zoom temporal para una visión más detallada.</p>
+          <p><strong>Leyenda:</strong></p>
+          <ul class="legend-list">
+            <li><span class="legend-syn"></span> SYN / SYN-ACK</li>
+            <li><span class="legend-ack"></span> ACK puro</li>
+            <li><span class="legend-fin"></span> FIN</li>
+            <li><span class="legend-data"></span> Datos</li>
+          </ul>
+    
+          <fieldset style="margin-bottom:20px;">
+            <legend>Filtros de Mensajes</legend>
+            <label><input type="checkbox" id="filter-syn" checked> Mostrar SYN</label>
+            <label><input type="checkbox" id="filter-ack" checked> Mostrar ACK</label>
+            <label><input type="checkbox" id="filter-fin" checked> Mostrar FIN</label>
+            <label><input type="checkbox" id="filter-data" checked> Mostrar Datos</label>
+          </fieldset>
+    
+          <h4>Zoom Temporal</h4>
+          <p>Ajusta la escala para ver eventos más juntos o separados:</p>
+          <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
+          <span id="time-zoom-value">200</span>
+    
+          <div id="visual-container" class="visual-container">
+            <svg id="simulation-visual"></svg>
+          </div>
+          <p>El gráfico de la evolución de la ventana muestra cómo TCP ajusta su envío según condiciones reales:</p>
+          <div id="window-chart-container" class="window-chart-container">
+            <svg id="window-chart" width="800" height="200"></svg>
+          </div>
+    
+          <button onclick="goBackToSelection()" class="secondary-btn">Volver a Selección de Simulaciones</button>
+        </div>
+      </div>
+    </section>
+    
+
+    <!-- LOGIN -->
+    <section id="login" class="view">
+      <div class="container">
+        <h2>Iniciar Sesión</h2>
+        <p>Inicia sesión para acceder a tus simulaciones. Podrás retomar experimentos, guardarlos y compararlos en el tiempo, potenciando tu aprendizaje.</p>
+        
+        <p><strong>Protege tu cuenta:</strong> Usa una contraseña segura. Datos con fines académicos.</p>
+
+        <label for="username">Nombre de usuario:</label>
+        <input type="text" id="username" placeholder="Ej: alumno_uab">
+
+        <label for="password">Contraseña:</label>
+        <input type="password" id="password" placeholder="Mínimo 6 caracteres">
+
+        <div>
+          <label><input type="checkbox" id="remember-me"> Recordar sesión</label>
+        </div>
+
+        <div class="auth-buttons">
+          <button onclick="login()">Iniciar Sesión</button>
+          <a href="#register">¿No tienes cuenta? Regístrate</a>
+        </div>
+
+        <hr>
+
+        <p>O inicia sesión con tu cuenta de Google:</p>
+        <button onclick="loginWithGoogle()" class="secondary-btn">G Iniciar Sesión con Google</button>
+      </div>
+    </section>
+
+    <!-- REGISTRARSE -->
+    <section id="register" class="view">
+      <div class="container">
+        <h2>Registrarse</h2>
+        <p>Crea una cuenta para mantener tus simulaciones organizadas, permitiendo un análisis más exhaustivo a lo largo del tiempo. Ideal para estudiantes y académicos interesados en experimentos de protocolo.</p>
+
+        <label for="username-reg">Nombre de usuario:</label>
+        <input type="text" id="username-reg" placeholder="Ej: alumno_uab">
+
+        <label for="password-reg">Contraseña:</label>
+        <input type="password" id="password-reg" placeholder="Mínimo 6 caracteres">
+
+        <div class="auth-buttons">
+          <button onclick="registerUser()">Registrarse</button>
+          <a href="#login">¿Ya tienes cuenta? Inicia Sesión</a>
+        </div>
+
+        <hr>
+
+        <p>O regístrate con tu cuenta de Google:</p>
+        <button onclick="registerWithGoogle()" class="secondary-btn">G Registrarse con Google</button>
       </div>
     </section>
   </main>
-  <div id="auth-section">
-    <div class="container">
-      <h2>Registro / Iniciar Sesión</h2>
-      <input type="text" id="username" placeholder="Nombre de usuario">
-      <input type="password" id="password" placeholder="Contraseña">
-      <div class="auth-buttons">
-        <button onclick="register()">Registrarse</button>
-        <button onclick="login()">Iniciar Sesión</button>
-      </div>
-    </div>
-  </div>
-  <footer>
+
+  <footer role="contentinfo">
     <div class="container">
       <p>&copy; 2024 Universitat Autònoma de Barcelona</p>
+      <p>Herramienta para fines académicos. <a href="https://www.uab.cat/" target="_blank">Visita la UAB</a></p>
+      <p>Documentación TCP: <a href="https://www.rfc-editor.org/rfc/rfc793" target="_blank">RFC 793</a></p>
     </div>
   </footer>
+
   <div class="tooltip" id="tooltip"></div>
   <script src="app.js"></script>
 </body>
