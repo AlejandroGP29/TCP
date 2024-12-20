@@ -13,6 +13,22 @@ let windowDataA = [];
 let windowDataB = [];
 
 document.addEventListener("DOMContentLoaded", () => {
+  const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
+  const tokenFromUrl = urlParams.get('token');
+  const usernameFromUrl = urlParams.get('username');
+
+  if (tokenFromUrl && usernameFromUrl) {
+    sessionStorage.setItem("token", tokenFromUrl);
+    sessionStorage.setItem("username", usernameFromUrl);
+    // Opcionalmente, limpiar la URL
+    window.location.hash = "#main";
+    updateUserMenu();
+    updateMainViewButtons();
+    updateProfileView();
+    loadSimulations();
+    initApp();
+  }
+
   tooltip = d3.select("#tooltip");
   console.log("DOMContentLoaded - iniciando router, updateUserMenu, etc.");
   
@@ -360,38 +376,42 @@ function createNewSimulation() {
 }
 
 function selectSimulation(simulationId) {
-  console.log("Seleccionando simulación:", simulationId);
   fetchWithAuth("/enterSimulation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ simulator_id: simulationId }),
   })
     .then(response => response.json())
-    .then(data => {
-      console.log("Respuesta enterSimulation:", data);
+    .then(async data => {
       if (data.success) {
         token = data.token;
         sessionStorage.setItem("token", token);
         sessionStorage.setItem("currentSimulationId", simulationId);
 
+        // Aquí verificamos si hay historial de mensajes
+        const historyResp = await fetchWithAuth("/history");
+        const historyData = await historyResp.json();
+        
         window.location.hash = "tcp-simulation";
         clearVisualization();
         clearStateHistories();
         initApp();
 
-        const started = sessionStorage.getItem("sim_" + simulationId + "_started");
-        if (started === "true") {
+        // Si hay historial, vamos directo a post-simulation
+        if (historyData.success && historyData.history.length > 0) {
           showPostSimulation();
+          // Como esta simulación no necesita start-simulation, marcamos como iniciada
+          sessionStorage.setItem("sim_" + simulationId + "_started", "true");
         } else {
-          showPreSimulation(); // Aquí se mostrarán parámetros y se habilitarán
+          showPreSimulation();
         }
-
       } else {
         alert(`Error: ${data.error}`);
       }
     })
     .catch(error => console.error("Error al entrar en simulación:", error));
 }
+
 
 
 
@@ -1036,3 +1056,57 @@ function showPostSimulation() {
   if (postSim) postSim.style.display = "block";
 }
 
+/*-----------API GOOGLE---------------*/
+
+function loginWithGoogle() {
+  // Redirigir al endpoint del servidor que inicia el OAuth
+  window.location.href = "/auth/google";
+}
+
+function registerWithGoogle() {
+  // En este caso, tanto "login con Google" como "registro con Google" podrían usar el mismo endpoint,
+  // pues el backend creará el usuario si no existe.
+  window.location.href = "/auth/google";
+}
+
+/*-----------WIRESHARK---------------*/
+function handleFileInputChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  uploadWiresharkFile(file);
+}
+
+function handleFileDrop(event) {
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  uploadWiresharkFile(file);
+}
+
+async function uploadWiresharkFile(file) {
+  if (!token) {
+    alert("Debes iniciar sesión antes de subir archivos.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('wiresharkFile', file);
+
+  try {
+    const response = await fetchWithAuth("/uploadWireshark", {
+      method: "POST",
+      body: formData
+    });
+    const data = await response.json();
+    if (data.success) {
+      alert("Archivo subido y procesado correctamente. Nueva Simulación ID: " + data.simulationId);
+      // Recargar la lista de simulaciones
+      loadSimulations();
+    } else {
+      alert("Error: " + data.error);
+    }
+  } catch (error) {
+    console.error("Error al subir archivo Wireshark:", error);
+    alert("Error al subir archivo Wireshark.");
+  }
+}
