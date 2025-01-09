@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Simulación TCP - UAB</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Carga de D3 para la visualización -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
@@ -19,30 +20,31 @@
         </div>
         <button class="menu-toggle" aria-label="Mostrar u ocultar menú">☰</button>
         <ul class="nav-links" role="menubar" aria-label="Menú principal">
-          <li><a href="#main" role="menuitem" data-hash="main">Inicio</a></li>
-          <li><a href="#definition" role="menuitem" data-hash="definition">Definición TCP</a></li>
-          <li><a href="#connection-setup" role="menuitem" data-hash="connection-setup">Establecimiento</a></li>
-          <li><a href="#data-transmission" role="menuitem" data-hash="data-transmission">Transmisión</a></li>
-          <li><a href="#connection-termination" role="menuitem" data-hash="connection-termination">Finalización</a></li>
-          <li><a href="#simulation-selection" role="menuitem" data-hash="simulation-selection">Simulation</a></li>
+          <li><a href="#main" data-hash="main" role="menuitem">Inicio</a></li>
+          <li><a href="#definition" data-hash="definition" role="menuitem">Definición TCP</a></li>
+          <li><a href="#connection-setup" data-hash="connection-setup" role="menuitem">Establecimiento</a></li>
+          <li><a href="#data-transmission" data-hash="data-transmission" role="menuitem">Transmisión</a></li>
+          <li><a href="#connection-termination" data-hash="connection-termination" role="menuitem">Finalización</a></li>
+          <li><a href="#simulation-selection" data-hash="simulation-selection" role="menuitem">Simulation</a></li>
         </ul>
         <div class="user-menu" aria-label="Menú de usuario">
           <span id="user-icon" aria-label="Icono de usuario" class="user-icon">👤</span>
           <div class="dropdown-content" id="user-dropdown">
-            <a href="#profile">Perfil</a>
-            <a href="#login">Iniciar Sesión</a>
-            <a href="#register">Registrarse</a>
+            <!-- Se rellena dinámicamente en app.js -->
           </div>
         </div>
       </div>
     </nav>
   </header>
 
+  <!-- Loader -->
   <div id="loader" aria-hidden="true"><div class="spinner"></div></div>
+
+  <!-- Contenedor de toasts -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <main>
-    <!-- MAIN -->
+    <!-- VISTA MAIN (por defecto activa) -->
     <section id="main" class="view active">
       <div class="hero">
         <div class="hero-text">
@@ -75,15 +77,15 @@
           <li>Nociones básicas de redes e IP</li>
           <li>Familiaridad con el intercambio SYN, ACK de TCP</li>
         </ul>
-
         <div id="main-action-buttons"></div>
       </div>
     </section>
 
-    <!-- DEFINICIÓN TCP -->
+    <!-- VISTAS TEÓRICAS (opcionales) -->
     <section id="definition" class="view">
       <div class="container">
         <h2>Definición de TCP</h2>
+        <p>Aquí puedes poner el contenido teórico sobre TCP...</p>
         <h3>¿Qué es TCP?</h3>
         <p>El <strong>Transmission Control Protocol (TCP)</strong> es uno de los protocolos centrales que sustentan el funcionamiento de Internet. Se trata de un protocolo de transporte confiable y orientado a conexión que se utiliza sobre la capa de red IP. Si piensas en Internet como un sistema postal, IP sería el servicio básico de entrega de paquetes (sin muchas garantías), mientras que TCP actuaría como un mensajero privado que garantiza que tus paquetes se entreguen en orden y completos.</p>
         <p>A diferencia de protocolos sin conexión como UDP, TCP establece una relación más formal entre emisor y receptor antes de transferir datos, asegurando una comunicación robusta. Es como si, antes de empezar a hablar, ambos interlocutores se aseguraran de que se escuchan claramente y acordaran un ritmo cómodo de conversación.</p>
@@ -121,8 +123,6 @@
         </ul>
       </div>
     </section>
-    
-    <!-- ESTABLECIMIENTO DE CONEXIÓN -->
     <section id="connection-setup" class="view">
       <div class="container">
         <h2>Establecimiento de Conexión</h2>
@@ -150,9 +150,6 @@
         Ahora ambos están listos para conversar. Esta preparación previa evita que uno empiece a hablar cuando el otro no está listo, o que se malinterpreten mensajes.</p>
       </div>
     </section>
-    
-
-    <!-- TRANSMISIÓN DE DATOS -->
     <section id="data-transmission" class="view">
       <div class="container">
         <h2>Transmisión de Datos</h2>
@@ -179,9 +176,6 @@
         </ul>
       </div>
     </section>
-    
-
-    <!-- FINALIZACIÓN -->
     <section id="connection-termination" class="view">
       <div class="container">
         <h2>Finalización de Conexión</h2>
@@ -212,58 +206,63 @@
       </div>
     </section>
 
-    <!-- SELECCIÓN DE SIMULACIÓN -->
+    <!-- VISTA SELECCIÓN DE SIMULACIÓN -->
     <section id="simulation-selection" class="view">
       <div class="container">
         <h2>Seleccionar Simulación</h2>
         <p>Crea nuevas simulaciones o utiliza trazas reales para un análisis más profundo. Esto te permite comparar escenarios teóricos con condiciones reales capturadas en la red, enriqueciendo el aprendizaje.</p>
 
-        <div id="simulation-list-container" class="simulation-list-container">
-          <ul id="simulation-list" class="simulation-list"></ul>
-        </div>
+        <!-- Lista de simulaciones -->
+        <ul id="simulation-list" class="simulation-list"></ul>
 
-        <button onclick="createNewSimulation()" class="secondary-btn">Crear Nueva Simulación</button>
+        <button id="create-simulation-btn" class="secondary-btn">Crear Nueva Simulación</button>
 
         <h3>Cargar Simulación desde Archivo Wireshark</h3>
-        <p>Arrastra un .pcap o .pcapng, o selecciona el archivo:</p>
-
-        <div id="wireshark-upload" class="upload-zone" ondragover="event.preventDefault();" ondrop="handleFileDrop(event);">
+        <div id="wireshark-upload" class="upload-zone" ondragover="event.preventDefault();">
           <p><strong>Arrastra tu archivo aquí</strong> o haz clic para seleccionar uno.</p>
-          <input type="file" id="wireshark-file-input" accept=".pcap,.pcapng" onchange="handleFileInputChange(event);">
-          <button type="button" onclick="document.getElementById('wireshark-file-input').click()" class="secondary-btn">Seleccionar Archivo</button>
+          <input type="file" id="wireshark-file-input" accept=".pcap,.pcapng">
+          <button id="select-wireshark-file-btn" type="button" class="secondary-btn">Seleccionar Archivo</button>
         </div>
       </div>
     </section>
 
-    <!-- SIMULACIÓN TCP -->
+    <!-- VISTA TCP-SIMULATION (pre-simulation y post-simulation) -->
     <section id="tcp-simulation" class="view">
       <div class="container">
         <h2>Simulación TCP</h2>
-    
+
         <!-- PRE-SIMULATION VIEW -->
         <div id="pre-simulation">
           <p>Ajusta parámetros y luego inicia la simulación.</p>
           <h3>Parámetros de Simulación</h3>
           <ul class="param-list">
-            <li><strong>Tamaño Ventana (bytes):</strong> <input type="number" id="window-size-input" value="1024"></li>
-            <li><strong>Datos Nodo A (bytes):</strong> <input type="number" id="data-size-input-A" value="1000"></li>
-            <li><strong>Datos Nodo B (bytes):</strong> <input type="number" id="data-size-input-B" value="0"></li>
-            <li><strong>MSS:</strong> <input type="number" id="mss-input" value="1460"></li>
-            <li><strong>Ratio de Pérdida:</strong> 
-              <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0"> 
+            <li><strong>Tamaño Ventana (bytes):</strong>
+              <input type="number" id="window-size-input" value="1024">
+            </li>
+            <li><strong>Datos Nodo A (bytes):</strong>
+              <input type="number" id="data-size-input-A" value="1000">
+            </li>
+            <li><strong>Datos Nodo B (bytes):</strong>
+              <input type="number" id="data-size-input-B" value="0">
+            </li>
+            <li><strong>MSS:</strong>
+              <input type="number" id="mss-input" value="1460">
+            </li>
+            <li><strong>Ratio de Pérdida:</strong>
+              <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0">
               <span id="loss-ratio-value">0</span>
             </li>
           </ul>
-    
+
           <h3>Controles</h3>
-          <button id="start-simulation-btn" onclick="startSimulation()">Iniciar Simulación</button>
-          <button onclick="goBackToSelection()" class="secondary-btn">Volver a Selección de Simulaciones</button>
+          <button id="start-simulation-btn">Iniciar Simulación</button>
+          <button id="go-back-btn" class="secondary-btn">Volver a Selección de Simulaciones</button>
         </div>
-    
+
         <!-- POST-SIMULATION VIEW -->
         <div id="post-simulation" style="display:none;">
           <p>La simulación está en marcha. Observa el intercambio de mensajes y la evolución de la conexión.</p>
-    
+
           <h3>Historial de Mensajes</h3>
           <div class="history-container">
             <div>
@@ -275,17 +274,8 @@
               <ul id="state-history-B" class="message-list"></ul>
             </div>
           </div>
-    
+
           <h3>Visualización</h3>
-          <p>El diagrama temporal muestra cómo evoluciona la conexión. Ajusta el zoom temporal para una visión más detallada.</p>
-          <p><strong>Leyenda:</strong></p>
-          <ul class="legend-list">
-            <li><span class="legend-syn"></span> SYN / SYN-ACK</li>
-            <li><span class="legend-ack"></span> ACK puro</li>
-            <li><span class="legend-fin"></span> FIN</li>
-            <li><span class="legend-data"></span> Datos</li>
-          </ul>
-    
           <fieldset style="margin-bottom:20px;">
             <legend>Filtros de Mensajes</legend>
             <label><input type="checkbox" id="filter-syn" checked> Mostrar SYN</label>
@@ -293,12 +283,12 @@
             <label><input type="checkbox" id="filter-fin" checked> Mostrar FIN</label>
             <label><input type="checkbox" id="filter-data" checked> Mostrar Datos</label>
           </fieldset>
-    
+
           <h4>Zoom Temporal</h4>
           <p>Ajusta la escala para ver eventos más juntos o separados:</p>
           <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
           <span id="time-zoom-value">200</span>
-    
+
           <div id="visual-container" class="visual-container">
             <svg id="simulation-visual"></svg>
           </div>
@@ -306,14 +296,13 @@
           <div id="window-chart-container" class="window-chart-container">
             <svg id="window-chart" width="800" height="200"></svg>
           </div>
-    
-          <button onclick="goBackToSelection()" class="secondary-btn">Volver a Selección de Simulaciones</button>
+
+          <button id="go-back-selection-btn" class="secondary-btn">Volver a Selección de Simulaciones</button>
         </div>
       </div>
     </section>
-    
 
-    <!-- LOGIN -->
+    <!-- VISTA LOGIN -->
     <section id="login" class="view">
       <div class="container">
         <h2>Iniciar Sesión</h2>
@@ -321,51 +310,53 @@
         
         <p><strong>Protege tu cuenta:</strong> Usa una contraseña segura. Datos con fines académicos.</p>
 
-        <label for="username">Nombre de usuario:</label>
-        <input type="text" id="username" placeholder="Ej: alumno_uab">
+        <label for="username">Nombre de usuario (email):</label>
+        <input type="text" id="username" placeholder="Ej: alumno@uab.cat">
 
         <label for="password">Contraseña:</label>
-        <input type="password" id="password" placeholder="Mínimo 6 caracteres">
+        <input type="password" id="password" placeholder="********">
 
-        <div>
-          <label><input type="checkbox" id="remember-me"> Recordar sesión</label>
-        </div>
-
-        <div class="auth-buttons">
-          <button onclick="login()">Iniciar Sesión</button>
-          <a href="#register">¿No tienes cuenta? Regístrate</a>
-        </div>
+        <button id="login-btn">Iniciar Sesión</button>
+        <a href="#register">¿No tienes cuenta? Regístrate</a>
+        
 
         <hr>
-
-        <p>O inicia sesión con tu cuenta de Google:</p>
-        <button onclick="loginWithGoogle()" class="secondary-btn">G Iniciar Sesión con Google</button>
+        <p>O inicia sesión con Google:</p>
+        <button id="google-login-btn" class="secondary-btn">G Iniciar Sesión con Google</button>
       </div>
     </section>
 
-    <!-- REGISTRARSE -->
+    <!-- VISTA REGISTER -->
     <section id="register" class="view">
       <div class="container">
         <h2>Registrarse</h2>
         <p>Crea una cuenta para mantener tus simulaciones organizadas, permitiendo un análisis más exhaustivo a lo largo del tiempo. Ideal para estudiantes y académicos interesados en experimentos de protocolo.</p>
 
-        <label for="username-reg">Nombre de usuario:</label>
-        <input type="text" id="username-reg" placeholder="Ej: alumno_uab">
+        <label for="username-reg">Nombre de usuario (email):</label>
+        <input type="text" id="username-reg" placeholder="Ej: alumno@uab.cat">
 
         <label for="password-reg">Contraseña:</label>
         <input type="password" id="password-reg" placeholder="Mínimo 6 caracteres">
 
-        <div class="auth-buttons">
-          <button onclick="registerUser()">Registrarse</button>
-          <a href="#login">¿Ya tienes cuenta? Inicia Sesión</a>
-        </div>
-
+        <button id="register-btn">Registrarse</button>
+        <a href="#login">¿Ya tienes cuenta? Inicia Sesión</a>
         <hr>
-
-        <p>O regístrate con tu cuenta de Google:</p>
-        <button onclick="registerWithGoogle()" class="secondary-btn">G Registrarse con Google</button>
+        <p>O regístrate con Google:</p>
+        <button id="google-register-btn" class="secondary-btn">G Registrarse con Google</button>
       </div>
     </section>
+
+    <!-- VISTA PROFILE -->
+    <section id="profile" class="view">
+      <div class="container">
+        <h2>Perfil de Usuario</h2>
+        <div class="center-content margin-bottom-20">
+          <div class="avatar-circle">👤</div>
+        </div>
+        <div id="profile-container"></div>
+      </div>
+    </section>
+
   </main>
 
   <footer role="contentinfo">
@@ -377,6 +368,7 @@
   </footer>
 
   <div class="tooltip" id="tooltip"></div>
+  <!-- Archivo app.js que maneja todos los eventos y lógica -->
   <script src="app.js"></script>
 </body>
 </html>

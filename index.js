@@ -2,11 +2,11 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const helmet = require("helmet"); // [MEJORA] Para seguridad de cabeceras HTTP
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("./db");
-const TCPNode = require("./tcpNode");
-const MessageTCP = require("./tcpNode");
+const { TCPNode, MessageTCP } = require("./tcpNode");
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const session = require('express-session');
@@ -17,15 +17,42 @@ const multer = require('multer');
 const { promisify } = require('util');
 const { body, validationResult } = require('express-validator');
 
-// Forzar SECRET_KEY
-if (!process.env.SECRET_KEY) {
+// [MEJORA] Centralizar configuración en un objeto (sin separarlo en archivo aparte)
+const config = {
+  port: process.env.PORT || 3000,
+  secretKey: process.env.SECRET_KEY,
+  googleClientId: process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+};
+
+// Verificar SECRET_KEY
+if (!config.secretKey) {
   console.error("ERROR: SECRET_KEY no está definida.");
   process.exit(1);
 }
-const SECRET_KEY = process.env.SECRET_KEY;
+
+// (Opcional) Comprobar si Google OAuth está configurado:
+if (!config.googleClientId || !config.googleClientSecret) {
+  console.warn("Advertencia: Falta la configuración de GOOGLE_CLIENT_ID y/o GOOGLE_CLIENT_SECRET. Google OAuth podría fallar.");
+}
 
 const app = express();
-const PORT = 3000;
+
+// [MEJORA] Añadir helmet para seguridad de cabeceras
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "https://d3js.org"  // aquí añadimos la URL base del CDN
+        ],
+        // otras directivas, p.e. styleSrc, imgSrc, etc.
+      },
+    },
+  })
+);
 
 // Promisificar DB
 db.runAsync = promisify(db.run.bind(db));
@@ -39,7 +66,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Configurar sesión y Passport antes que las rutas
 app.use(session({
-  secret: 'tu_secreto', // Usa una cadena segura en producción
+  secret: 'cadena_secreta_sesion', // [MEJORA] pon algo fuerte en producción
   resave: false,
   saveUninitialized: false
 }));
@@ -47,9 +74,10 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// TODO: Para mejorar la escalabilidad del estado, considerar usar Redis u otro store distribuido
+// Almacén de nodos en memoria
 let simulations = {};
 
+// Función para inicializar nodos
 function initNodes(simulationId) {
   const nodeA = new TCPNode("A");
   const nodeB = new TCPNode("B");
@@ -59,17 +87,36 @@ function initNodes(simulationId) {
   simulations[simulationId] = { nodeA, nodeB };
 }
 
+// Middleware de autenticación
 function authenticateToken(req, res, next) {
   const token = req.headers["authorization"];
-  if (!token) return res.status(401).json({ error: "Acceso denegado" });
-
-  jwt.verify(token, SECRET_KEY, (err, user) => {
-    if (err) return res.status(403).json({ error: "Token inválido" });
+  if (!token) {
+    return res.status(401).json({ 
+      success: false,
+      error: {
+        message: "Acceso denegado",
+        type: "AuthError",
+        statusCode: 401
+      }
+    });
+  }
+  jwt.verify(token, config.secretKey, (err, user) => {
+    if (err) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: "Token inválido",
+          type: "AuthError",
+          statusCode: 403
+        }
+      });
+    }
     req.user = user;
     next();
   });
 }
 
+// Rutas de usuario
 app.post("/register",
   [
     body('username').isEmail().withMessage('El nombre de usuario debe ser un email válido.'),
@@ -80,7 +127,10 @@ app.post("/register",
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         const firstError = errors.array()[0].msg;
-        return res.status(400).json({ error: firstError });
+        return res.status(400).json({
+          success: false,
+          error: { message: firstError, type: "ValidationError", statusCode: 400 }
+        });
       }
 
       const { username, password } = req.body;
@@ -88,11 +138,14 @@ app.post("/register",
 
       const query = "INSERT INTO Users (username, password_hash) VALUES (?, ?)";
       await db.runAsync(query, [username, hashedPassword]);
+
       res.json({ success: true, message: "Usuario registrado correctamente." });
     } catch (err) {
-      // Si el usuario ya existe, SQLite lanzará un error con "UNIQUE constraint failed"
       if (err.message && err.message.includes("UNIQUE constraint failed")) {
-        return res.status(400).json({ error: "El usuario ya existe." });
+        return res.status(400).json({
+          success: false,
+          error: { message: "El usuario ya existe.", type: "ValidationError", statusCode: 400 }
+        });
       }
       next(err);
     }
@@ -108,25 +161,34 @@ app.post("/login",
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         const firstError = errors.array()[0].msg;
-        return res.status(400).json({ error: firstError });
+        return res.status(400).json({
+          success: false,
+          error: { message: firstError, type: "ValidationError", statusCode: 400 }
+        });
       }
 
       const { username, password } = req.body;
       const user = await db.getAsync("SELECT * FROM Users WHERE username = ?", [username]);
 
       if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-        return res.status(400).json({ error: "Credenciales incorrectas." });
+        return res.status(400).json({
+          success: false,
+          error: { message: "Credenciales incorrectas.", type: "AuthError", statusCode: 400 }
+        });
       }
 
-      const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, {
-        expiresIn: "1h",
-      });
+      const token = jwt.sign(
+        { id: user.id, username: user.username },
+        config.secretKey,
+        { expiresIn: "1h" }
+      );
       res.json({ success: true, token });
     } catch (err) {
       next(err);
     }
 });
 
+// Rutas de simulaciones
 app.get("/simulations", authenticateToken, async (req, res, next) => {
   try {
     const rows = await db.allAsync("SELECT * FROM Simulations WHERE user_id = ?", [req.user.id]);
@@ -154,7 +216,10 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
     );
 
     if (!row) {
-      return res.status(404).json({ error: "Simulación no encontrada." });
+      return res.status(404).json({
+        success: false,
+        error: { message: "Simulación no encontrada.", type: "NotFoundError", statusCode: 404 }
+      });
     }
 
     if (row.parameter_settings == null) {
@@ -172,7 +237,7 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
 
     const token = jwt.sign(
       { id: req.user.id, username: req.user.username, simulation: simulator_id },
-      SECRET_KEY,
+      config.secretKey,
       { expiresIn: "1h" }
     );
     res.json({ success: true, token });
@@ -181,35 +246,57 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
   }
 });
 
-app.post("/start-simulation", authenticateToken, async (req, res, next) => {
-  try {
-    const { dataSizeA, dataSizeB, windowSize, mss, lossRatio } = req.body;
-    const simulationId = req.user.simulation;
-    const sim = simulations[simulationId];
+// [MEJORA] Validaciones en /start-simulation
+app.post("/start-simulation",
+  authenticateToken,
+  [
+    body('dataSizeA').isInt({ min: 0 }).withMessage('dataSizeA debe ser entero >= 0'),
+    body('dataSizeB').isInt({ min: 0 }).withMessage('dataSizeB debe ser entero >= 0'),
+    body('windowSize').isInt({ min: 1 }).withMessage('windowSize debe ser entero >= 1'),
+    body('mss').isInt({ min: 1 }).withMessage('mss debe ser entero >= 1'),
+    body('lossRatio').isFloat({ min: 0, max: 1 }).withMessage('lossRatio debe estar entre 0 y 1'),
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        const firstError = errors.array()[0].msg;
+        return res.status(400).json({
+          success: false,
+          error: { message: firstError, type: "ValidationError", statusCode: 400 }
+        });
+      }
 
-    if (!sim) {
-      return res.status(400).json({ error: "Simulación no inicializada." });
+      const { dataSizeA, dataSizeB, windowSize, mss, lossRatio } = req.body;
+      const simulationId = req.user.simulation;
+      const sim = simulations[simulationId];
+
+      if (!sim) {
+        return res.status(400).json({
+          success: false,
+          error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
+        });
+      }
+
+      sim.nodeA.windowSize = parseInt(windowSize) || 1024;
+      sim.nodeB.windowSize = parseInt(windowSize) || 1024;
+
+      await db.runAsync("DELETE FROM MessageHistory WHERE simulation_id = ?", [simulationId]);
+
+      sim.nodeA.lossRatio = parseFloat(lossRatio) || 0;
+      sim.nodeB.lossRatio = parseFloat(lossRatio) || 0;
+      if (mss) {
+        sim.nodeA.MSS = parseInt(mss) || 1460;
+        sim.nodeB.MSS = parseInt(mss) || 1460;
+      }
+
+      sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
+      sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
+
+      res.json({ success: true, message: "Simulación iniciada." });
+    } catch (error) {
+      next(error);
     }
-
-    sim.nodeA.windowSize = parseInt(windowSize) || 1024;
-    sim.nodeB.windowSize = parseInt(windowSize) || 1024;
-
-    await db.runAsync("DELETE FROM MessageHistory WHERE simulation_id = ?", [simulationId]);
-
-    sim.nodeA.lossRatio = parseFloat(lossRatio) || 0;
-    sim.nodeB.lossRatio = parseFloat(lossRatio) || 0;
-    if (mss) {
-      sim.nodeA.MSS = parseInt(mss) || 1460;
-      sim.nodeB.MSS = parseInt(mss) || 1460;
-    }
-
-    sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
-    sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
-
-    res.json({ success: true, message: "Simulación iniciada." });
-  } catch (error) {
-    next(error);
-  }
 });
 
 app.get("/state/:nodeId", authenticateToken, (req, res, next) => {
@@ -218,7 +305,10 @@ app.get("/state/:nodeId", authenticateToken, (req, res, next) => {
     const sim = simulations[simulationId];
 
     if (!sim) {
-      return res.status(400).json({ error: "Simulación no inicializada." });
+      return res.status(400).json({
+        success: false,
+        error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
+      });
     }
 
     const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
@@ -247,7 +337,10 @@ app.get("/param/:nodeId", authenticateToken, (req, res, next) => {
     const sim = simulations[simulationId];
 
     if (!sim) {
-      return res.status(400).json({ error: "Simulación no inicializada." });
+      return res.status(400).json({
+        success: false,
+        error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
+      });
     }
 
     const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
@@ -260,7 +353,7 @@ app.get("/param/:nodeId", authenticateToken, (req, res, next) => {
 app.get("/goBack", authenticateToken, (req, res) => {
   const simulationId = req.user.simulation;
   delete simulations[simulationId];
-  const token = jwt.sign({ id: req.user.id, username: req.user.username }, SECRET_KEY, {
+  const token = jwt.sign({ id: req.user.id, username: req.user.username }, config.secretKey, {
     expiresIn: "1h",
   });
   res.json({ success: true, token });
@@ -270,14 +363,20 @@ app.post("/saveState", authenticateToken, async (req, res, next) => {
   try {
     const simulationId = req.user.simulation;
     const sim = simulations[simulationId];
-    if (!sim) return res.status(400).json({ error: "Simulación no inicializada." });
+
+    if (!sim) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
+      });
+    }
 
     const parameter_settings = JSON.stringify({
       nodeA: sim.nodeA.getParameters(),
       nodeB: sim.nodeB.getParameters(),
     });
-
-    await db.runAsync("UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?", 
+    await db.runAsync(
+      "UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?", 
       [parameter_settings, simulationId, req.user.id]
     );
 
@@ -290,17 +389,31 @@ app.post("/saveState", authenticateToken, async (req, res, next) => {
 app.post("/loadState", authenticateToken, async (req, res, next) => {
   try {
     const simulationId = req.user.simulation;
-    const row = await db.getAsync("SELECT parameter_settings FROM Simulations WHERE id = ? AND user_id = ?", 
+    const row = await db.getAsync(
+      "SELECT parameter_settings FROM Simulations WHERE id = ? AND user_id = ?",
       [simulationId, req.user.id]
     );
 
-    if (!row) return res.status(404).json({ error: "No se encontró estado para esta simulación." });
-    if (!row.parameter_settings) return res.status(400).json({ error: "No hay estado guardado." });
+    if (!row) {
+      return res.status(404).json({
+        success: false,
+        error: { message: "No se encontró estado para esta simulación.", type: "NotFoundError", statusCode: 404 }
+      });
+    }
+    if (!row.parameter_settings) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "No hay estado guardado.", type: "BadRequest", statusCode: 400 }
+      });
+    }
 
     const param = JSON.parse(row.parameter_settings);
     const sim = simulations[simulationId];
     if (!sim) {
-      return res.status(400).json({ error: "Simulación no inicializada." });
+      return res.status(400).json({
+        success: false,
+        error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
+      });
     }
 
     sim.nodeA.setNodeParameter(param.nodeA);
@@ -312,17 +425,13 @@ app.post("/loadState", authenticateToken, async (req, res, next) => {
   }
 });
 
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser((id, done) => {
-  done(null, { id });
-});
+// Google OAuth
+passport.serializeUser((user, done) => { done(null, user.id); });
+passport.deserializeUser((id, done) => { done(null, { id }); });
 
 passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  clientID: config.googleClientId,
+  clientSecret: config.googleClientSecret,
   callbackURL: "/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
   try {
@@ -342,16 +451,16 @@ passport.use(new GoogleStrategy({
 }));
 
 app.get('/auth/google', passport.authenticate('google', { scope: ['email', 'profile'] }));
-
 app.get('/auth/google/callback', 
   passport.authenticate('google', { failureRedirect: '/#login' }),
   (req, res) => {
     const user = req.user;
-    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: "1h" });
+    const token = jwt.sign({ id: user.id, username: user.username }, config.secretKey, { expiresIn: "1h" });
     res.redirect(`/#main?token=${token}&username=${encodeURIComponent(user.username)}`);
   }
 );
 
+// Upload Wireshark
 const upload = multer({ dest: 'uploads/' });
 
 function parseTCPHeader(packet) {
@@ -467,9 +576,13 @@ function parseTCPHeader(packet) {
   };
 }
 
+// Ejemplo adaptado a nuevo formato de errores
 app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), (req, res, next) => {
   if (!req.file) {
-    return res.status(400).json({ error: "No se ha subido ningún archivo." });
+    return res.status(400).json({ 
+      success: false,
+      error: { message: "No se ha subido ningún archivo.", type: "BadRequest", statusCode: 400 }
+    });
   }
 
   const originalExt = path.extname(req.file.originalname).toLowerCase();
@@ -495,7 +608,6 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
           if (!tcpInfo) continue;
 
           const node_id = tcpInfo.srcPort < tcpInfo.destPort ? "A" : "B";
-
           const msgParams = {
             srcPort: tcpInfo.srcPort,
             destPort: tcpInfo.destPort,
@@ -526,7 +638,6 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
             ]
           );
         }
-
         fs.unlinkSync(pcapFilePath);
         res.json({ success: true, message: "Archivo Wireshark cargado correctamente.", simulationId });
       } catch (error) {
@@ -541,24 +652,46 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
     });
   }
 
-  if (originalExt === '.cap') {
+  if (originalExt === '.cap' || originalExt === '.pcapng') {
     const convertedPath = filePath + '.pcap';
     exec(`editcap -F pcap ${filePath} ${convertedPath}`, (error) => {
       fs.unlinkSync(filePath);
       if (error) {
-        return next(new Error("No se pudo convertir el archivo CAP a PCAP."));
+        return next(new Error("No se pudo convertir el archivo a PCAP."));
       }
       parseFile(convertedPath);
     });
-  } else {
+  } else if (originalExt === '.pcap') {
     parseFile(filePath);
+  } else {
+    fs.unlinkSync(filePath);
+    return res.status(400).json({ 
+      success: false,
+      error: { message: "Formato de archivo no soportado (usa .cap, .pcap o .pcapng).", type: "BadRequest", statusCode: 400 }
+    });
   }
 });
 
-// Middleware de manejo de errores
+// [MEJORA] Middleware final de manejo de errores con formato unificado
 app.use((err, req, res, next) => {
   console.error("Error no manejado:", err);
-  res.status(err.status || 500).json({ error: err.message || "Error interno del servidor." });
+  const status = err.status || 500;
+  const type = status === 400 ? "BadRequest" :
+               status === 401 ? "AuthError" :
+               status === 403 ? "ForbiddenError" :
+               status === 404 ? "NotFoundError" :
+               "ServerError";
+
+  res.status(status).json({
+    success: false,
+    error: {
+      message: err.message || "Error interno del servidor.",
+      type,
+      statusCode: status
+    }
+  });
 });
 
-app.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));
+app.listen(config.port, () => {
+  console.log(`Servidor en http://localhost:${config.port}`);
+});
