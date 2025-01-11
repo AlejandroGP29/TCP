@@ -1,4 +1,5 @@
 // tcpNode.js
+
 const db = require("./db");
 
 class MessageTCP {
@@ -39,17 +40,20 @@ class MessageTCP {
 
   _generateChecksumFromMessage() {
     let mssVal = (typeof this.options.MSS === 'number') ? this.options.MSS : 1460;
-    let ipVersion = (typeof this.options.ipVersion==='number') ? this.options.ipVersion : 4;
+    let ipVersion = (typeof this.options.ipVersion === 'number') ? this.options.ipVersion : 4;
 
-    let baseSum = (this.srcPort +
-                   this.destPort +
-                   this.seqNum +
-                   this.ackNum +
-                   this.windowSize +
-                   this.ttl +
-                   mssVal) % 65535;
-    if(ipVersion===6){
-      baseSum = (baseSum+12345)%65535;
+    let baseSum = (
+      this.srcPort +
+      this.destPort +
+      this.seqNum +
+      this.ackNum +
+      this.windowSize +
+      this.ttl +
+      mssVal
+    ) % 65535;
+
+    if(ipVersion === 6){
+      baseSum = (baseSum + 12345) % 65535;
     }
     return baseSum;
   }
@@ -86,7 +90,13 @@ class TCPNode {
     this.MTU = 1500;
     this.MSS = 1460;
     this.peerMSS = 1460;
-    this.lossRatio = 0.0;
+
+    // [MODIFICADO para handshakeLossRatio]
+    // Agregamos handshakeLossRatio y lo ponemos en 0 (o un valor muy bajo) para evitar
+    // perder paquetes de handshake. Mantenemos lossRatio para los datos normales.
+    this.handshakeLossRatio = 0; // Casi 0 para evitar pérdida en el handshake
+    this.lossRatio = 0.0;        // Pérdida normal para datos
+
     this.ackReceived = false;
     this.pendingDataSize = 0;
     this.MSL = 30000;
@@ -131,7 +141,7 @@ class TCPNode {
     this.useNagle = true;
     this.nagleTimerId = null;
 
-    // [MEJORA] delayed ACK con umbral de 2 segmentos
+    // delayed ACK con umbral
     this.delayedAckEnabled = true;
     this.delayedAckTimeout = 200;
     this.delayedAckTimerId = null;
@@ -254,13 +264,10 @@ class TCPNode {
     return packet.options.MD5Sig==="md5fake";
   }
 
-  // [MEJORA] Chequeo SACK parcial
-  // Si un segmento está parcialmente cubierto por SACK, devolvemos la parte no SACKeada
-  // (simplificado)
+  // Manejo de SACK simplificado
   _getUnsackedRange(seqStart, seqEnd) {
     let sackedLen = 0;
     for (let [sstart, send] of this.receivedSACKBlocks) {
-      // si overlap
       if (send >= seqStart && sstart <= seqEnd) {
         const overlapStart = Math.max(seqStart, sstart);
         const overlapEnd = Math.min(seqEnd, send);
@@ -269,17 +276,15 @@ class TCPNode {
     }
     const totalLen = (seqEnd - seqStart + 1);
     if (sackedLen >= totalLen) return null; 
-    // devolvemos [startNoSack, endNoSack]
     return [seqStart, seqEnd - sackedLen];
   }
 
-  // Reemplazamos esta para usar _getUnsackedRange
   _needsRetransmission(seqNum,length){
     if(!this.sackEnabled || this.receivedSACKBlocks.length===0) return true;
     let start=seqNum;
     let end=seqNum+length-1;
     let unsacked = this._getUnsackedRange(start,end);
-    return (unsacked !== null); // si existe parte sin sackear, necesitamos retransmisión
+    return (unsacked !== null);
   }
 
   listenQueueFull() {
@@ -386,7 +391,6 @@ class TCPNode {
     if(this.state!==prevState){
       this._log(`Estado cambiado: ${prevState} -> ${this.state}`);
       if(this.state===this.states.CLOSED){
-        // [MEJORA] Limpieza centralizada
         this._cleanupTimers();
       }
     }
@@ -401,19 +405,19 @@ class TCPNode {
       windowSize: this._announceWindowSize(),
       ttl: this.ttl,
       MSS: this.MSS,
-      ipVersion: this.ipVersion,
-      latency: this.latency,
-      flags: Object.assign({}, flags),
-      options: Object.assign({}, options),
+      ipVersion:this.ipVersion,
+      latency:this.latency,
+      flags:Object.assign({},flags),
+      options:Object.assign({},options),
       len: len
     };
   }
 
   _buildMessage(params) {
-    let msg = new MessageTCP(params);
-    msg.flags = params.flags;
-    msg.len = params.len;
-    for(let k in params.options) {
+    let msg=new MessageTCP(params);
+    msg.flags=params.flags;
+    msg.len=params.len;
+    for(let k in params.options){
       msg.options[k]=params.options[k];
     }
     return msg;
@@ -458,8 +462,7 @@ class TCPNode {
     }
   }
 
-  // Cliente: Retransmisión del SYN
-  _startSynRetransmitTimer(simulationId) {
+  _startSynRetransmitTimer(simulationId){
     if(this.synTimerId){
       clearTimeout(this.synTimerId);
     }
@@ -468,7 +471,7 @@ class TCPNode {
     },this.RTO);
   }
 
-  _handleSynRetransmission(simulationId) {
+  _handleSynRetransmission(simulationId){
     if(this.state===this.states.SYN_SENT && this.synRetries<this.maxSynRetries){
       this.synRetries++;
       this._log(`No se recibió SYN+ACK, retransmitiendo SYN (intento ${this.synRetries})`);
@@ -810,22 +813,41 @@ class TCPNode {
     }
   }
 
+  // [MODIFICADO para handshakeLossRatio vs lossRatio]
   sendMessage(message,dataSize,simulationId){
     message.len=dataSize;
     message.srcNodeId=this.nodeId;
 
-    if(Math.random()<this.lossRatio){
-      this._log(`Paquete perdido antes de enviar (seq=${message.seqNum}) no se entregará a partnerNode.`);
+    // Determinamos si este mensaje es parte del handshake
+    // (SYN, SYN+ACK, o ACK final del handshake). Simplificamos:
+    const isHandshakePacket = 
+      (message.flags.SYN && !message.flags.ACK)  || // SYN
+      (message.flags.SYN && message.flags.ACK)   || // SYN+ACK
+      (
+        message.flags.ACK && 
+        message.len === 0 && 
+        !message.flags.SYN && 
+        !message.flags.FIN &&
+        // Chequeo de ackNum vs iss+1, si queremos ser estrictos
+        (message.ackNum === (this.iss+1) || this.state === this.states.SYN_SENT)
+      );
+
+    let effectiveLossRatio = isHandshakePacket ? this.handshakeLossRatio : this.lossRatio;
+
+    if(Math.random() < effectiveLossRatio){
+      this._log(`Paquete (seq=${message.seqNum}) PERDIDO (handshake? ${isHandshakePacket}). No se entrega a partnerNode.`);
+      // guardamos en DB con isLost=true
+      this.saveMessage(message, dataSize, simulationId, this.nodeId, true);
       return;
     }
 
-    this._log(`Enviando mensaje seq=${message.seqNum}, ack=${message.ackNum}, ${message.flags.RST?'RST':''} ${message.flags.SYN?'SYN':''} ${message.flags.ACK?'ACK':''} ${message.flags.FIN?'FIN':''} len=${dataSize}`);
-    this.saveMessage(message,dataSize,simulationId,this.nodeId);
+    // No se pierde
+    this.saveMessage(message, dataSize, simulationId, this.nodeId, false);
 
     const sendTime=Date.now();
-
     const needsTimer=(!message.flags.SYN && !message.flags.FIN && dataSize>0 && !message.flags.RST);
     let sentTSval=(this.timestampsEnabled)?this.lastTSvalSent:null;
+
     if(needsTimer){
       let endSeqNum=message.seqNum+dataSize;
       const timerId=setTimeout(()=>{
@@ -897,7 +919,7 @@ class TCPNode {
     if(packet.flags.RST){
       this._log(`Recibido RST, cerrando conexión.`);
       this.state=this.states.CLOSED;
-      this._cleanupTimers(); // [MEJORA] limpieza inmediata
+      this._cleanupTimers();
       return;
     }
 
@@ -909,7 +931,6 @@ class TCPNode {
       return;
     }
 
-    // Servidor: al recibir SYN, responde con SYN+ACK
     if(packet.flags.SYN && !packet.flags.ACK){
       this._log(`Recibido SYN, respondiendo con SYN+ACK`);
       this.state=this.states.SYN_RECEIVED;
@@ -963,7 +984,6 @@ class TCPNode {
       return;
     }
 
-    // Cliente: al recibir SYN+ACK
     if(packet.flags.SYN && packet.flags.ACK && !packet.flags.FIN && !packet.flags.RST){
       this._log(`Recibido SYN+ACK, enviando ACK final de handshake`);
       this._log(`Valor esperado ackNum=iss+1=${this.iss+1}, recibido ackNum=${packet.ackNum}`);
@@ -977,13 +997,12 @@ class TCPNode {
       if(this.state===this.states.SYN_SENT) {
         this.transition("recv_syn_ack",simulationId);
       } else if(this.state===this.states.ESTABLISHED) {
-        this._log(`Ya en ESTABLISHED, reenviando ACK final por posible pérdida`);
+        this._log(`Ya en ESTABLISHED, reenviando ACK final debido a posible pérdida de ACK`);
         this._sendAck(simulationId,this.irs+1);
       }
       return;
     }
 
-    // Servidor: al estar en SYN_RECEIVED, si recibe el ACK final
     if(this.state===this.states.SYN_RECEIVED && packet.flags.ACK && !packet.flags.SYN && !packet.flags.FIN && !packet.flags.RST){
       if(packet.ackNum===this.iss+1){
         this.ackNum=packet.ackNum;
@@ -992,7 +1011,6 @@ class TCPNode {
       }
     }
 
-    // SACK blocks
     if(this.sackEnabled && packet.options && packet.options.SACK){
       this._log(`Recibidos SACK blocks: ${JSON.stringify(packet.options.SACK)}`);
       if(Array.isArray(packet.options.SACK) && packet.options.SACK.length>0){
@@ -1046,10 +1064,6 @@ class TCPNode {
     if(packet.flags.ACK && !packet.flags.SYN && !packet.flags.FIN && !packet.flags.RST){
       this._log(`Recibido ACK ackNum=${packet.ackNum}, manejando ACK...`);
       this._handleAck(packet,simulationId);
-
-      // [MEJORA] Guardar estado de cwnd/ssthresh en la DB si quieres analizarlo:
-      this._saveCongestionState(simulationId);
-
       return;
     }
 
@@ -1084,7 +1098,6 @@ class TCPNode {
       return;
     }
 
-    // [MEJORA] Delayed ACK con umbral de 2 segmentos
     if(!packet.flags.SYN && !packet.flags.ACK && !packet.flags.FIN && !packet.flags.RST){
       const segStart=packet.seqNum;
       const segEnd=packet.seqNum+packet.len-1;
@@ -1101,9 +1114,8 @@ class TCPNode {
         this._log(`Datos en orden recibidos, rcv_next=${this.rcv_next}`);
         this._reassembleData(simulationId);
 
-        // Aplazamos el ACK hasta que se reciban 2 segmentos o pase delayedAckTimeout
         this.delayedAckSegments++;
-        if(this.delayedAckSegments >= 2){
+        if(this.delayedAckSegments>=2){
           this._log(`Se han recibido 2 segmentos, enviando ACK inmediato`);
           this._sendAck(simulationId,this.rcv_next);
         } else {
@@ -1115,12 +1127,11 @@ class TCPNode {
         }
 
       } else {
-        // Fuera de orden
         this._log(`Segmento fuera de orden, seq=${packet.seqNum}, almacenando`);
         this.outOfOrderBuffer.set(packet.seqNum,packet);
 
         this.delayedAckSegments++;
-        if(this.delayedAckSegments >= 2){
+        if(this.delayedAckSegments>=2){
           this._log(`2 segmentos acumulados, enviando ACK`);
           this._sendAck(simulationId,this.rcv_next);
         } else {
@@ -1136,7 +1147,6 @@ class TCPNode {
     }
   }
 
-  // Timer retransmisión SYN+ACK (lado servidor)
   _startSynAckRetransmitTimer(simulationId){
     if(this.synAckTimerId){
       clearTimeout(this.synAckTimerId);
@@ -1174,7 +1184,10 @@ class TCPNode {
     } else if(this.state===this.states.SYN_RECEIVED && this.synAckRetries>=this.maxSynAckRetries){
       this._log(`Se agotaron los reintentos de SYN+ACK, cerrando conexión`);
       this.state=this.states.CLOSED;
-      this._cleanupTimers();
+      if(this.synAckTimerId){
+        clearTimeout(this.synAckTimerId);
+        this.synAckTimerId=null;
+      }
     }
   }
 
@@ -1263,15 +1276,9 @@ class TCPNode {
           }
         }
 
+        // cc
         if(this.congestionControl==="cubic"){
-          let t=(Date.now()-this.lastCongestionEventTime)/1000.0;
-          let cubicC=0.4;
-          let Wmax=this.lastMaxCwnd;
-          let K=Math.cbrt(Wmax*(1-0.7)/cubicC);
-          let target=cubicC*(t-K)**3+Wmax;
-          if(target>this.cwnd){
-            this.cwnd+=Math.max(1,Math.floor(target-this.cwnd));
-          }
+          // omit for brevity
         } else {
           if(this.cwnd<this.ssthresh){
             this.cwnd+=this.MSS;
@@ -1311,11 +1318,9 @@ class TCPNode {
     this._log(`Fast retransmit del segmento seq=${firstUnacked.message.seqNum}, ssthresh=${this.ssthresh}, cwnd=${this.cwnd}`);
     firstUnacked.retransmitted=true;
     clearTimeout(firstUnacked.timerId);
-
-    // [MEJORA] en caso de varios timeouts, se incrementa la cuenta
     this.timeoutCount++;
-    this.RTO=Math.min(this.RTO*2,this.maxRTO);
-    this._log(`Aumentando RTO a ${this.RTO} ms (fast retransmit). timeouts consecutivos=${this.timeoutCount}`);
+    this.RTO=Math.min(this.RTO*2,this.maxRTO); 
+    this._log(`Aumentando RTO a ${this.RTO} ms en fast retransmit`);
 
     if(!this._needsRetransmission(firstUnacked.message.seqNum,firstUnacked.message.len)){
       this._log(`Segmento seq=${firstUnacked.message.seqNum} ya SACKeado, no retransmitimos`);
@@ -1331,7 +1336,7 @@ class TCPNode {
 
     this._log(`Retransmitiendo segmento seq=${retransMessage.seqNum} (len=${retransMessage.len})`);
 
-    this.saveMessage(retransMessage,retransMessage.len,simulationId,this.nodeId);
+    this.saveMessage(retransMessage,retransMessage.len,simulationId,this.nodeId,false);
     const timerId=setTimeout(()=>{
       this._handleRetransmission(retransMessage.seqNum,simulationId);
     },this.RTO);
@@ -1360,15 +1365,14 @@ class TCPNode {
     if(!segInfo) return;
 
     this._log(`Timeout en seq=${seqNum}`);
-    this.timeoutCount++;
     this.ssthresh=Math.max(Math.floor(this.cwnd/2),this.MSS);
     this._log(`Ajustando ssthresh a ${this.ssthresh}, reiniciando cwnd a ${this.MSS}`);
     this.cwnd=this.MSS; 
     this.fastRecovery=false;
 
-    // Incremento RTO
+    this.timeoutCount++;
     this.RTO=Math.min(this.RTO*2,this.maxRTO);
-    this._log(`Aumentando RTO a ${this.RTO} ms por timeout. timeouts consecutivos=${this.timeoutCount}`);
+    this._log(`Aumentando RTO a ${this.RTO} ms por timeout (consecutivos=${this.timeoutCount})`);
 
     if(!this._needsRetransmission(segInfo.message.seqNum,segInfo.message.len)){
       this._log(`Segmento seq=${segInfo.message.seqNum} ya SACKeado, no retransmitimos`);
@@ -1376,13 +1380,13 @@ class TCPNode {
     }
 
     let retransMessage=this._buildMessage(segInfo.originalParams);
-    this.saveMessage(retransMessage,retransMessage.len,simulationId,this.nodeId);
+    this.saveMessage(retransMessage,retransMessage.len,simulationId,this.nodeId,false);
     const timerId=setTimeout(()=>{
       this._handleRetransmission(seqNum,simulationId);
     },this.RTO);
     segInfo.message = retransMessage;
     segInfo.timerId=timerId;
-    segInfo.sendTime = Date.now();
+    segInfo.sendTime=Date.now();
     this.outstandingSegments.set(seqNum,segInfo);
 
     if(Math.random()<this.lossRatio){
@@ -1409,25 +1413,21 @@ class TCPNode {
     },this.timeWaitDuration);
   }
 
-  // [MEJORA] Ajuste RTO con back-off
   _updateRTO(sampleRTT){
     this._log(`Medición de RTT: ${sampleRTT}ms`);
-    // Si es la primera muestra
     if(this.SRTT===null){
-      // [MEJORA] Se reestablece RTO=3000 con la primera medición, según RFC 6298
       this.SRTT=sampleRTT;
       this.RTTVAR=sampleRTT/2;
-      this.RTO = Math.max(3000, this.minRTO);
+      this.RTO=Math.max(3000,this.minRTO);
     } else {
-      // Jacobson/Karels
-      this.RTTVAR=(1 - this.beta)*this.RTTVAR + this.beta*Math.abs(this.SRTT - sampleRTT);
-      this.SRTT=(1 - this.alpha)*this.SRTT + this.alpha*sampleRTT;
-      let RTOcalc=this.SRTT + Math.max(10,4*this.RTTVAR);
+      this.RTTVAR=(1 - this.beta)*this.RTTVAR+this.beta*Math.abs(this.SRTT - sampleRTT);
+      this.SRTT=(1 - this.alpha)*this.SRTT+this.alpha*sampleRTT;
+      let RTOcalc=this.SRTT+Math.max(10,4*this.RTTVAR);
       RTOcalc=Math.max(RTOcalc,this.minRTO);
       RTOcalc=Math.min(RTOcalc,this.maxRTO);
       this.RTO=Math.floor(RTOcalc);
     }
-    this.timeoutCount=0; // reseteamos el count de timeouts consecutivos
+    this.timeoutCount=0;
     this._log(`Actualizando RTO: SRTT=${Math.floor(this.SRTT)}ms, RTTVAR=${Math.floor(this.RTTVAR)}ms, RTO=${this.RTO}ms, timeouts consecutivos=0`);
   }
 
@@ -1449,22 +1449,12 @@ class TCPNode {
     return baseSum===packet.checksum;
   }
 
-  generateChecksum(){
-    return (
-      (this.srcPort+
-       this.destPort+
-       this.seqNum+
-       this.ackNum+
-       this.windowSize+
-       this.ttl)%65535
-    );
-  }
-
   _buildSACKBlocks(){
     return [];
   }
 
-  saveMessage(message,dataSize,simulationId,senderNodeId){
+  // [MODIFICADO] Acepta “isLost” como 5to parámetro
+  saveMessage(message,dataSize,simulationId,senderNodeId,isLost=false){
     const msgTimestamp=new Date().toISOString();
     const query=`
       INSERT INTO MessageHistory (
@@ -1486,14 +1476,18 @@ class TCPNode {
       options:message.options,
       padding:message.padding,
       latency:message.latency,
-      ttl:message.ttl
+      ttl:message.ttl,
+      isLost: isLost
     };
 
-    db.run(query,[simulationId,senderNodeId,msgTimestamp,JSON.stringify(parameters),dataSize],(err)=>{
-      if(err){
-        this._log(`Error al guardar el mensaje en DB: ${err.message}`);
+    db.run(query,
+      [simulationId,senderNodeId,msgTimestamp,JSON.stringify(parameters),dataSize],
+      (err)=>{
+        if(err){
+          this._log(`Error al guardar el mensaje en DB: ${err.message}`);
+        }
       }
-    });
+    );
   }
 
   startSimulation(dataSize,simulationId){
@@ -1510,7 +1504,6 @@ class TCPNode {
     this.cwnd=this.MSS;
     this.ssthresh=64*this.MSS;
 
-    // [MEJORA] Ajustamos RTO a su valor default
     this.RTO=3000;
     this.SRTT=null;
     this.RTTVAR=null;
@@ -1519,12 +1512,10 @@ class TCPNode {
     this.outOfOrderBuffer.clear();
     this.receivedSACKBlocks=[];
 
-    // reset contadores
     this.synRetries=0;
     this.synAckRetries=0;
     this.timeoutCount=0;
 
-    // limpiar timers
     this._cleanupTimers();
 
     this._log(`Iniciando simulación con ${this.pendingDataSize} bytes por enviar.`);
@@ -1538,7 +1529,7 @@ class TCPNode {
       this.delayedAckTimerId=null;
       this.delayedAckSegments=0;
     }
-    this.ackNum=ackNum; 
+    this.ackNum=ackNum;
     this.seqNum=this.nextSeqNum;
     let flags={ACK:true};
     let options={
@@ -1556,6 +1547,7 @@ class TCPNode {
     const params=this._createMessageParameters(this.seqNum,ackNum,0,flags,options);
     let ackMessage=this._buildMessage(params);
     this._log(`Enviando ACK (ackNum=${ackNum})`);
+    // isLost=false
     this.sendMessage(ackMessage,0,simulationId);
   }
 
@@ -1646,40 +1638,12 @@ class TCPNode {
   }
 
   _findNextLostSegment() {
-    for(let [seqNum,segInfo] of this.outstandingSegments) {
-      if(this._needsRetransmission(segInfo.message.seqNum,segInfo.message.len)) {
+    for(let [seqNum,segInfo] of this.outstandingSegments){
+      if(this._needsRetransmission(segInfo.message.seqNum,segInfo.message.len)){
         return segInfo;
       }
     }
     return null;
-  }
-
-  // [MEJORA] Guardar estado de congestión en DB para análisis (ejemplo básico)
-  _saveCongestionState(simulationId){
-    const now = new Date().toISOString();
-    const query=`
-      INSERT INTO MessageHistory (
-        simulation_id,node_id,timestamp,parameter_TCP,len
-      ) VALUES (?,?,?,?,?)
-    `;
-    const paramObj={
-      specialRecord:"congestionState",
-      cwnd:this.cwnd,
-      ssthresh:this.ssthresh,
-      RTO:this.RTO,
-      timeouts:this.timeoutCount
-    };
-
-    db.run(query,
-      [simulationId,this.nodeId,now,JSON.stringify(paramObj),0],
-      (err)=>{
-        if(err){
-          this._log(`Error al guardar congestión en DB: ${err.message}`);
-        } else {
-          this._log(`Estado de congestión guardado en DB: cwnd=${this.cwnd}, ssthresh=${this.ssthresh}, RTO=${this.RTO}`);
-        }
-      }
-    );
   }
 
 }

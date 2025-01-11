@@ -17,7 +17,7 @@ const multer = require('multer');
 const { promisify } = require('util');
 const { body, validationResult } = require('express-validator');
 
-// [MEJORA] Centralizar configuración en un objeto (sin separarlo en archivo aparte)
+// [MEJORA] Config central
 const config = {
   port: process.env.PORT || 3000,
   secretKey: process.env.SECRET_KEY,
@@ -31,50 +31,47 @@ if (!config.secretKey) {
   process.exit(1);
 }
 
-// (Opcional) Comprobar si Google OAuth está configurado:
+// (Opcional) Advertir si Google OAuth no config
 if (!config.googleClientId || !config.googleClientSecret) {
-  console.warn("Advertencia: Falta la configuración de GOOGLE_CLIENT_ID y/o GOOGLE_CLIENT_SECRET. Google OAuth podría fallar.");
+  console.warn("Advertencia: Falta GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Google OAuth podría no funcionar.");
 }
 
 const app = express();
 
-// [MEJORA] Añadir helmet para seguridad de cabeceras
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: [
-          "'self'",
-          "https://d3js.org"  // aquí añadimos la URL base del CDN
-        ],
-        // otras directivas, p.e. styleSrc, imgSrc, etc.
-      },
-    },
-  })
-);
+// [MEJORA] Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "https://d3js.org", // Permitir D3
+      ],
+      // Otras directivas si deseas
+    }
+  }
+}));
 
 // Promisificar DB
 db.runAsync = promisify(db.run.bind(db));
 db.getAsync = promisify(db.get.bind(db));
 db.allAsync = promisify(db.all.bind(db));
 
-// Middleware para parsear JSON y formularios
+// Middlewares JSON / estáticos
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Configurar sesión y Passport antes que las rutas
+// Config sesión + passport
 app.use(session({
-  secret: 'cadena_secreta_sesion', // [MEJORA] pon algo fuerte en producción
+  secret: 'cadena_secreta_sesion', // pon algo fuerte en prod
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
 }));
-
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Almacén de nodos en memoria
+// Almacén en memoria para las simulaciones
 let simulations = {};
 
 // Función para inicializar nodos
@@ -87,7 +84,7 @@ function initNodes(simulationId) {
   simulations[simulationId] = { nodeA, nodeB };
 }
 
-// Middleware de autenticación
+// Autenticación con token
 function authenticateToken(req, res, next) {
   const token = req.headers["authorization"];
   if (!token) {
@@ -111,12 +108,14 @@ function authenticateToken(req, res, next) {
         }
       });
     }
-    req.user = user;
+    req.user = user; 
     next();
   });
 }
 
-// Rutas de usuario
+/********************************/
+/*        RUTAS DE USUARIO      */
+/********************************/
 app.post("/register",
   [
     body('username').isEmail().withMessage('El nombre de usuario debe ser un email válido.'),
@@ -188,7 +187,9 @@ app.post("/login",
     }
 });
 
-// Rutas de simulaciones
+/********************************/
+/*   RUTAS DE SIMULACIONES      */
+/********************************/
 app.get("/simulations", authenticateToken, async (req, res, next) => {
   try {
     const rows = await db.allAsync("SELECT * FROM Simulations WHERE user_id = ?", [req.user.id]);
@@ -207,6 +208,7 @@ app.post("/createSimulations", authenticateToken, async (req, res, next) => {
   }
 });
 
+// enterSimulation
 app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
   try {
     const { simulator_id } = req.body;
@@ -222,6 +224,7 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
       });
     }
 
+    // Creamos nodos fresh o con param
     if (row.parameter_settings == null) {
       initNodes(simulator_id);
     } else {
@@ -235,6 +238,7 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
       simulations[simulator_id] = { nodeA, nodeB };
     }
 
+    // Actualizamos token con simulation
     const token = jwt.sign(
       { id: req.user.id, username: req.user.username, simulation: simulator_id },
       config.secretKey,
@@ -246,7 +250,6 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
   }
 });
 
-// [MEJORA] Validaciones en /start-simulation
 app.post("/start-simulation",
   authenticateToken,
   [
@@ -311,7 +314,7 @@ app.get("/state/:nodeId", authenticateToken, (req, res, next) => {
       });
     }
 
-    const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
+    const node = (req.params.nodeId === "A") ? sim.nodeA : sim.nodeB;
     res.json({ state: node.state });
   } catch (error) {
     next(error);
@@ -321,6 +324,10 @@ app.get("/state/:nodeId", authenticateToken, (req, res, next) => {
 app.get("/history", authenticateToken, async (req, res, next) => {
   try {
     const simulationId = req.user.simulation;
+    // [Opcional] Chequear si sim existe (a veces no es crítico)
+    // const sim = simulations[simulationId];
+    // if (!sim) {...}
+
     const rows = await db.allAsync(
       "SELECT * FROM MessageHistory WHERE simulation_id = ? ORDER BY timestamp",
       [simulationId]
@@ -343,7 +350,7 @@ app.get("/param/:nodeId", authenticateToken, (req, res, next) => {
       });
     }
 
-    const node = req.params.nodeId === "A" ? sim.nodeA : sim.nodeB;
+    const node = (req.params.nodeId === "A") ? sim.nodeA : sim.nodeB;
     res.json(node.getParameters());
   } catch (error) {
     next(error);
@@ -352,7 +359,9 @@ app.get("/param/:nodeId", authenticateToken, (req, res, next) => {
 
 app.get("/goBack", authenticateToken, (req, res) => {
   const simulationId = req.user.simulation;
+  // Borramos la simulación en memoria
   delete simulations[simulationId];
+  // Creamos token sin simulation
   const token = jwt.sign({ id: req.user.id, username: req.user.username }, config.secretKey, {
     expiresIn: "1h",
   });
@@ -363,23 +372,20 @@ app.post("/saveState", authenticateToken, async (req, res, next) => {
   try {
     const simulationId = req.user.simulation;
     const sim = simulations[simulationId];
-
     if (!sim) {
       return res.status(400).json({
         success: false,
         error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
       });
     }
-
     const parameter_settings = JSON.stringify({
       nodeA: sim.nodeA.getParameters(),
       nodeB: sim.nodeB.getParameters(),
     });
     await db.runAsync(
-      "UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?", 
+      "UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?",
       [parameter_settings, simulationId, req.user.id]
     );
-
     res.json({ success: true, message: "Estado guardado correctamente." });
   } catch (err) {
     next(err);
@@ -415,7 +421,6 @@ app.post("/loadState", authenticateToken, async (req, res, next) => {
         error: { message: "Simulación no inicializada.", type: "BadRequest", statusCode: 400 }
       });
     }
-
     sim.nodeA.setNodeParameter(param.nodeA);
     sim.nodeB.setNodeParameter(param.nodeB);
 
@@ -425,7 +430,9 @@ app.post("/loadState", authenticateToken, async (req, res, next) => {
   }
 });
 
-// Google OAuth
+/********************************/
+/*         GOOGLE OAUTH         */
+/********************************/
 passport.serializeUser((user, done) => { done(null, user.id); });
 passport.deserializeUser((id, done) => { done(null, { id }); });
 
@@ -460,7 +467,9 @@ app.get('/auth/google/callback',
   }
 );
 
-// Upload Wireshark
+/********************************/
+/*   UPLOAD WIRESHARK / PCAP    */
+/********************************/
 const upload = multer({ dest: 'uploads/' });
 
 function parseTCPHeader(packet) {
@@ -470,19 +479,17 @@ function parseTCPHeader(packet) {
   if (typeof timestampSeconds !== 'number' || typeof timestampMicroseconds !== 'number') {
     return null;
   }
-
   const timestamp = new Date((timestampSeconds * 1000) + (timestampMicroseconds / 1000));
 
   const ETH_LEN = 14;
   const ipHeader = buffer.slice(ETH_LEN);
-  const ipVersion = ipHeader[0] >> 4; 
+  const ipVersion = ipHeader[0] >> 4;
   if (ipVersion !== 4) {
     return null;
   }
-
   const ipHeaderLen = (ipHeader[0] & 0x0F) * 4;
   const totalLength = ipHeader.readUInt16BE(2);
-  const ttl = ipHeader[8]; // TTL
+  const ttl = ipHeader[8];
 
   const tcpOffset = ETH_LEN + ipHeaderLen;
   if (tcpOffset + 20 > buffer.length) {
@@ -506,7 +513,7 @@ function parseTCPHeader(packet) {
   const psh = ((reservedAndFlags >> 3) & 0x01) === 1;
   const rst = ((reservedAndFlags >> 2) & 0x01) === 1;
   const syn = ((reservedAndFlags >> 1) & 0x01) === 1;
-  const fin = ((reservedAndFlags) & 0x01) === 1;
+  const fin = (reservedAndFlags & 0x01) === 1;
 
   const windowSize = buffer.readUInt16BE(tcpOffset + 14);
 
@@ -545,18 +552,7 @@ function parseTCPHeader(packet) {
     }
   }
 
-  const flags = {
-    NS: ns,
-    CWR: cwr,
-    ECE: ece,
-    URG: urg,
-    ACK: ackFlag,
-    PSH: psh,
-    RST: rst,
-    SYN: syn,
-    FIN: fin,
-  };
-
+  const flags = { NS: ns, CWR: cwr, ECE: ece, URG: urg, ACK: ackFlag, PSH: psh, RST: rst, SYN: syn, FIN: fin };
   const latency = 0;
 
   return {
@@ -576,7 +572,6 @@ function parseTCPHeader(packet) {
   };
 }
 
-// Ejemplo adaptado a nuevo formato de errores
 app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ 
@@ -599,6 +594,7 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
 
     parser.on('end', async () => {
       try {
+        // Creamos nueva simulación para el user
         await db.runAsync("INSERT INTO Simulations (user_id) VALUES (?)", [req.user.id]);
         const row = await db.getAsync("SELECT last_insert_rowid() as lastID");
         const simulationId = row.lastID;
@@ -607,7 +603,7 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
           const tcpInfo = parseTCPHeader(p);
           if (!tcpInfo) continue;
 
-          const node_id = tcpInfo.srcPort < tcpInfo.destPort ? "A" : "B";
+          const node_id = (tcpInfo.srcPort < tcpInfo.destPort) ? "A" : "B";
           const msgParams = {
             srcPort: tcpInfo.srcPort,
             destPort: tcpInfo.destPort,
@@ -652,6 +648,7 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
     });
   }
 
+  // Convertir .cap/.pcapng a .pcap
   if (originalExt === '.cap' || originalExt === '.pcapng') {
     const convertedPath = filePath + '.pcap';
     exec(`editcap -F pcap ${filePath} ${convertedPath}`, (error) => {
@@ -672,7 +669,9 @@ app.post("/uploadWireshark", authenticateToken, upload.single('wiresharkFile'), 
   }
 });
 
-// [MEJORA] Middleware final de manejo de errores con formato unificado
+/********************************/
+/*   Manejo final de errores    */
+/********************************/
 app.use((err, req, res, next) => {
   console.error("Error no manejado:", err);
   const status = err.status || 500;

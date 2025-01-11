@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="es" dir="ltr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Simulación TCP - UAB</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- Carga de D3 para la visualización -->
+  <link rel="stylesheet" href="style.css" />
+  <!-- Carga de D3 para visualización -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
@@ -44,7 +44,7 @@
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <main>
-    <!-- VISTA MAIN (por defecto activa) -->
+    <!-- VISTA MAIN (inicio) -->
     <section id="main" class="view active">
       <div class="hero">
         <div class="hero-text">
@@ -81,11 +81,10 @@
       </div>
     </section>
 
-    <!-- VISTAS TEÓRICAS (opcionales) -->
+    <!-- Vistas teóricas (opcional) -->
     <section id="definition" class="view">
       <div class="container">
         <h2>Definición de TCP</h2>
-        <p>Aquí puedes poner el contenido teórico sobre TCP...</p>
         <h3>¿Qué es TCP?</h3>
         <p>El <strong>Transmission Control Protocol (TCP)</strong> es uno de los protocolos centrales que sustentan el funcionamiento de Internet. Se trata de un protocolo de transporte confiable y orientado a conexión que se utiliza sobre la capa de red IP. Si piensas en Internet como un sistema postal, IP sería el servicio básico de entrega de paquetes (sin muchas garantías), mientras que TCP actuaría como un mensajero privado que garantiza que tus paquetes se entreguen en orden y completos.</p>
         <p>A diferencia de protocolos sin conexión como UDP, TCP establece una relación más formal entre emisor y receptor antes de transferir datos, asegurando una comunicación robusta. Es como si, antes de empezar a hablar, ambos interlocutores se aseguraran de que se escuchan claramente y acordaran un ritmo cómodo de conversación.</p>
@@ -206,15 +205,13 @@
       </div>
     </section>
 
-    <!-- VISTA SELECCIÓN DE SIMULACIÓN -->
+    <!-- VISTA SELECCIÓN DE SIMULACIONES -->
     <section id="simulation-selection" class="view">
       <div class="container">
         <h2>Seleccionar Simulación</h2>
-        <p>Crea nuevas simulaciones o utiliza trazas reales para un análisis más profundo. Esto te permite comparar escenarios teóricos con condiciones reales capturadas en la red, enriqueciendo el aprendizaje.</p>
+        <p>Crea nuevas simulaciones o utiliza trazas reales (Wireshark) para un análisis más profundo...</p>
 
-        <!-- Lista de simulaciones -->
         <ul id="simulation-list" class="simulation-list"></ul>
-
         <button id="create-simulation-btn" class="secondary-btn">Crear Nueva Simulación</button>
 
         <h3>Cargar Simulación desde Archivo Wireshark</h3>
@@ -226,7 +223,7 @@
       </div>
     </section>
 
-    <!-- VISTA TCP-SIMULATION (pre-simulation y post-simulation) -->
+    <!-- VISTA TCP-SIMULATION -->
     <section id="tcp-simulation" class="view">
       <div class="container">
         <h2>Simulación TCP</h2>
@@ -236,21 +233,28 @@
           <p>Ajusta parámetros y luego inicia la simulación.</p>
           <h3>Parámetros de Simulación</h3>
           <ul class="param-list">
-            <li><strong>Tamaño Ventana (bytes):</strong>
+            <li><strong>Tamaño Ventana (bytes):</strong> 
               <input type="number" id="window-size-input" value="1024">
             </li>
-            <li><strong>Datos Nodo A (bytes):</strong>
+            <li><strong>Datos Nodo A (bytes):</strong> 
               <input type="number" id="data-size-input-A" value="1000">
             </li>
-            <li><strong>Datos Nodo B (bytes):</strong>
+            <li><strong>Datos Nodo B (bytes):</strong> 
               <input type="number" id="data-size-input-B" value="0">
             </li>
-            <li><strong>MSS:</strong>
+            <li><strong>MSS:</strong> 
               <input type="number" id="mss-input" value="1460">
             </li>
-            <li><strong>Ratio de Pérdida:</strong>
-              <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0">
+            <li><strong>Ratio de Pérdida:</strong> 
+              <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0"> 
               <span id="loss-ratio-value">0</span>
+            </li>
+            <!-- NUEVOS CAMPOS DE seqNum -->
+            <li><strong>SeqNum Nodo A:</strong>
+              <input type="number" id="seqnum-A-input" value="1000">
+            </li>
+            <li><strong>SeqNum Nodo B:</strong>
+              <input type="number" id="seqnum-B-input" value="2000">
             </li>
           </ul>
 
@@ -262,6 +266,30 @@
         <!-- POST-SIMULATION VIEW -->
         <div id="post-simulation" style="display:none;">
           <p>La simulación está en marcha. Observa el intercambio de mensajes y la evolución de la conexión.</p>
+
+          <h3>Parámetros de los Nodos</h3>
+          <div class="node-params-container">
+            <div>
+              <h4>Parámetros Nodo A</h4>
+              <!-- Se rellenan con updateTCPParams("A") -->
+              <div id="tcp-params-A-post"></div>
+              <!-- NUEVO: Mostramos tamaño de datos de A -->
+              <p style="margin-top:6px;">
+                <strong>Datos A:</strong>
+                <span id="data-size-a-post"></span> bytes
+              </p>
+            </div>
+            <div>
+              <h4>Parámetros Nodo B</h4>
+              <!-- Se rellenan con updateTCPParams("B") -->
+              <div id="tcp-params-B-post"></div>
+              <!-- NUEVO: Mostramos tamaño de datos de B -->
+              <p style="margin-top:6px;">
+                <strong>Datos B:</strong>
+                <span id="data-size-b-post"></span> bytes
+              </p>
+            </div>
+          </div>
 
           <h3>Historial de Mensajes</h3>
           <div class="history-container">
@@ -289,9 +317,15 @@
           <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
           <span id="time-zoom-value">200</span>
 
+          <div class="arrow-list-container">
+            <h3>Mensajes (Flechas)</h3>
+            <div id="arrow-list"></div>
+          </div>
+
           <div id="visual-container" class="visual-container">
             <svg id="simulation-visual"></svg>
           </div>
+
           <p>El gráfico de la evolución de la ventana muestra cómo TCP ajusta su envío según condiciones reales:</p>
           <div id="window-chart-container" class="window-chart-container">
             <svg id="window-chart" width="800" height="200"></svg>
@@ -299,6 +333,7 @@
 
           <button id="go-back-selection-btn" class="secondary-btn">Volver a Selección de Simulaciones</button>
         </div>
+
       </div>
     </section>
 
@@ -309,16 +344,21 @@
         <p>Inicia sesión para acceder a tus simulaciones. Podrás retomar experimentos, guardarlos y compararlos en el tiempo, potenciando tu aprendizaje.</p>
         
         <p><strong>Protege tu cuenta:</strong> Usa una contraseña segura. Datos con fines académicos.</p>
-
         <label for="username">Nombre de usuario (email):</label>
         <input type="text" id="username" placeholder="Ej: alumno@uab.cat">
-
+        
         <label for="password">Contraseña:</label>
         <input type="password" id="password" placeholder="********">
 
         <button id="login-btn">Iniciar Sesión</button>
-        <a href="#register">¿No tienes cuenta? Regístrate</a>
-        
+
+        <!-- Enlace para ir a registro -->
+        <p style="margin-top:20px;">
+          ¿No tienes cuenta? 
+          <a href="#register" style="color:var(--color-primary); text-decoration:underline;">
+            Regístrate
+          </a>
+        </p>
 
         <hr>
         <p>O inicia sesión con Google:</p>
@@ -339,7 +379,15 @@
         <input type="password" id="password-reg" placeholder="Mínimo 6 caracteres">
 
         <button id="register-btn">Registrarse</button>
-        <a href="#login">¿Ya tienes cuenta? Inicia Sesión</a>
+
+        <!-- Enlace para ir a login -->
+        <p style="margin-top:20px;">
+          ¿Ya tienes cuenta?
+          <a href="#login" style="color:var(--color-primary); text-decoration:underline;">
+            Inicia Sesión
+          </a>
+        </p>
+
         <hr>
         <p>O regístrate con Google:</p>
         <button id="google-register-btn" class="secondary-btn">G Registrarse con Google</button>
@@ -356,7 +404,6 @@
         <div id="profile-container"></div>
       </div>
     </section>
-
   </main>
 
   <footer role="contentinfo">
@@ -368,7 +415,6 @@
   </footer>
 
   <div class="tooltip" id="tooltip"></div>
-  <!-- Archivo app.js que maneja todos los eventos y lógica -->
   <script src="app.js"></script>
 </body>
 </html>

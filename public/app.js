@@ -7,27 +7,34 @@
 let token = sessionStorage.getItem("token");
 let updateInterval = null;
 
-// Almacenamos mensajes (para visualización con D3)
+// Mensajes (historial D3)
 let messageData = [];
 let earliestTime = null;
 let latestTime = null;
 let timeScale = null;
 
-// Parámetros para “jitter” y threshold de tiempo
+// Config visual
 let messageVerticalJitter = 5;
 let timeThresholdForJitter = 200;
 
 // Datos para la gráfica de la ventana
+// Ahora guardamos dos valores por nodo: advertisedWindow y cwnd
 let windowDataA = [];
 let windowDataB = [];
 
 // Tooltip D3
 let tooltip = null;
 
+// Contador para asignar IDs a las flechas
+let arrowIdCounter = 1;
+
+// [NUEVO] Guardamos también los valores dataSizeA y dataSizeB globalmente
+let globalDataSizeA = 0;
+let globalDataSizeB = 0;
+
 /********************************/
 /* LOADER Y TOASTS              */
 /********************************/
-
 function showLoader() {
   const loader = document.getElementById("loader");
   if (loader) loader.style.display = "flex";
@@ -36,7 +43,6 @@ function hideLoader() {
   const loader = document.getElementById("loader");
   if (loader) loader.style.display = "none";
 }
-
 function showToast(message, type="success") {
   const container = document.getElementById("toast-container");
   if (!container) return;
@@ -51,9 +57,8 @@ function showToast(message, type="success") {
 }
 
 /********************************/
-/* MANEJO CENTRALIZADO ERRORES  */
+/*  MANEJO CENTRALIZADO ERRORES */
 /********************************/
-
 function handleError(error) {
   console.error(error);
   hideLoader();
@@ -63,43 +68,46 @@ function handleError(error) {
 /********************************/
 /*    ROUTER DE VISTAS (HASH)   */
 /********************************/
-
 document.addEventListener("DOMContentLoaded", () => {
+  const savedHash = sessionStorage.getItem("lastHash");
+  if (token && savedHash) {
+    window.location.hash = savedHash;
+  }
+
   const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
   const tokenFromUrl = urlParams.get('token');
   const usernameFromUrl = urlParams.get('username');
   if (tokenFromUrl && usernameFromUrl) {
     sessionStorage.setItem("token", tokenFromUrl);
     sessionStorage.setItem("username", usernameFromUrl);
-    // Si venía token en la URL, forzamos hash a #main
     window.location.hash = "#main";
   }
 
   tooltip = d3.select("#tooltip");
 
   initRouter();
-  setupVisualSimulation();    // Dibuja el SVG base
+  setupVisualSimulation();
   updateUserMenu();
   updateMainViewButtons();
   updateProfileView();
   setupHamburgerMenu();
 
-  // Escucha de checkboxes de filtros
+  // Filtros
   document.getElementById("filter-syn")?.addEventListener("change", renderAll);
   document.getElementById("filter-ack")?.addEventListener("change", renderAll);
   document.getElementById("filter-fin")?.addEventListener("change", renderAll);
   document.getElementById("filter-data")?.addEventListener("change", renderAll);
 
-  // Escucha de slider zoom
+  // Zoom temporal
   const zoomInput = document.getElementById("time-zoom-input");
   if (zoomInput) {
     zoomInput.addEventListener("input", () => {
       document.getElementById("time-zoom-value").textContent = zoomInput.value;
-      renderAll(); // Redibuja con el nuevo zoom
+      renderAll();
     });
   }
 
-  // Escucha de slider ratio de pérdida
+  // ratio de pérdida
   const lossRatioInput = document.getElementById("loss-ratio-input");
   if (lossRatioInput) {
     lossRatioInput.addEventListener("input", () => {
@@ -116,7 +124,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const createSimBtn = document.getElementById("create-simulation-btn");
   if (createSimBtn) {
     createSimBtn.addEventListener("click", () => {
-      // (Opcional) Si había una simulación previa, la limpiamos:
       if (sessionStorage.getItem("currentSimulationId")) {
         goBackToSelection(() => {
           createNewSimulation();
@@ -136,75 +143,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("go-back-btn")?.addEventListener("click", goBackToSelection);
   document.getElementById("go-back-selection-btn")?.addEventListener("click", goBackToSelection);
 
-  // Si hay token en sessionStorage, inicializar la app,
-  // pero sin forzar "simulation-selection".
   token = sessionStorage.getItem("token");
   if (token) {
-    // Revisar si hay una simulación previa (para re-entrar):
-    const prevSimId = sessionStorage.getItem("currentSimulationId");
-    if (prevSimId) {
-      reEnterSimulation(prevSimId);
-    } else {
-      // Sin simulación previa => normal
-      initApp();
-      loadSimulations();
-      toggleDisplay("login", false);
-      toggleDisplay("register", false);
-    }
+    loadSimulations();
+    initApp();
+    toggleDisplay("login", false);
+    toggleDisplay("register", false);
   }
 });
 
-/** 
- * reEnterSimulation(simId): Llamada al recargar la página si existía
- * un currentSimulationId, para "re-entrar" en la simulación y no
- * forzar la vista "simulation-selection".
- */
-async function reEnterSimulation(simulationId) {
-  showLoader();
-  try {
-    const resp = await fetchWithAuth("/enterSimulation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ simulator_id: simulationId })
-    });
-    const data = await resp.json();
-    hideLoader();
-    if (data.success) {
-      // Actualizamos token y sim ID
-      token = data.token;
-      sessionStorage.setItem("token", token);
-      sessionStorage.setItem("currentSimulationId", simulationId);
-
-      // Iniciar la app, checar historial
-      clearVisualization();
-      clearStateHistories();
-      initApp();
-
-      // Checar si hay historial
-      const historyResp = await fetchWithAuth("/history");
-      const historyData = await historyResp.json();
-      window.location.hash = "tcp-simulation";
-
-      if (historyData.success && historyData.history.length > 0) {
-        showPostSimulation();
-        sessionStorage.setItem(`sim_${simulationId}_started`, "true");
-      } else {
-        showPreSimulation(); // re-habilita inputs
-      }
-    } else {
-      console.warn("No se pudo re-entrar la simulación previa. Error:", data.error?.message);
-      // Ir a la selección
-      goBackToSelection();
-    }
-  } catch (error) {
-    hideLoader();
-    handleError(error);
-    goBackToSelection();
-  }
-}
-
 function initRouter() {
-  window.addEventListener('hashchange', showViewFromHash);
+  window.addEventListener("hashchange", () => {
+    sessionStorage.setItem("lastHash", window.location.hash);
+    showViewFromHash();
+  });
   showViewFromHash();
 }
 
@@ -239,7 +191,7 @@ function toggleDisplay(elementId, show) {
 }
 
 /********************************/
-/* showPreSimulation / postSim  */
+/* showPreSimulation/postSim    */
 /********************************/
 function showPreSimulation() {
   const preSim = document.getElementById("pre-simulation");
@@ -247,13 +199,14 @@ function showPreSimulation() {
   if (preSim) preSim.style.display = "block";
   if (postSim) postSim.style.display = "none";
 
-  // Re-habilitar inputs y botón start
   const inputs = [
     "window-size-input",
     "data-size-input-A",
     "data-size-input-B",
     "mss-input",
     "loss-ratio-input",
+    "seqnum-A-input",
+    "seqnum-B-input"
   ];
   inputs.forEach(id => {
     const el = document.getElementById(id);
@@ -268,6 +221,12 @@ function showPostSimulation() {
   const postSim = document.getElementById("post-simulation");
   if (preSim) preSim.style.display = "none";
   if (postSim) postSim.style.display = "block";
+
+  // [NUEVO] Mostramos tamaño datos A y B
+  const dataSizeSpanA = document.getElementById("data-size-a-post");
+  const dataSizeSpanB = document.getElementById("data-size-b-post");
+  if (dataSizeSpanA) dataSizeSpanA.textContent = globalDataSizeA;
+  if (dataSizeSpanB) dataSizeSpanB.textContent = globalDataSizeB;
 }
 
 /********************************/
@@ -349,6 +308,7 @@ function logout() {
   sessionStorage.removeItem("token");
   sessionStorage.removeItem("username");
   sessionStorage.removeItem("currentSimulationId");
+  sessionStorage.removeItem("lastHash");
   token = null;
   updateUserMenu();
   location.reload();
@@ -470,7 +430,7 @@ function loadSimulations() {
             li.textContent = `Simulación ${sim.id}`;
             li.setAttribute("tabindex","0");
             li.addEventListener("click", () => selectSimulation(sim.id));
-            li.addEventListener("keypress", (e) => {
+            li.addEventListener("keypress", e => {
               if (e.key === "Enter") selectSimulation(sim.id);
             });
             simulationList.appendChild(li);
@@ -518,17 +478,15 @@ function selectSimulation(simulationId) {
         clearStateHistories();
         initApp();
 
-        // Checar historial
+        // Revisamos historial
         const historyResp = await fetchWithAuth("/history");
         const historyData = await historyResp.json();
 
         window.location.hash = "tcp-simulation";
-
         if (historyData.success && historyData.history.length > 0) {
           showPostSimulation();
           sessionStorage.setItem(`sim_${simulationId}_started`, "true");
         } else {
-          // Habilitar la vista pre-simulation
           showPreSimulation();
         }
       } else {
@@ -575,38 +533,42 @@ function goBackToSelection(callback) {
 /********************************/
 function startSimulation() {
   const simulationId = sessionStorage.getItem("currentSimulationId");
+  if (!simulationId) {
+    handleError({ message: "No hay simulación seleccionada para iniciar." });
+    return;
+  }
+
+  // [NUEVO] Tomamos los valores de seqNumA y seqNumB
+  const seqNumA = document.getElementById("seqnum-A-input")?.value || "0";
+  const seqNumB = document.getElementById("seqnum-B-input")?.value || "0";
+
   const dataSizeA = document.getElementById("data-size-input-A")?.value || "0";
   const dataSizeB = document.getElementById("data-size-input-B")?.value || "0";
   const windowSize = document.getElementById("window-size-input")?.value || "1024";
   const mss = document.getElementById("mss-input")?.value || "1460";
   const lossRatio = document.getElementById("loss-ratio-input")?.value || "0";
 
-  if (Number(dataSizeA) < 0 || Number(dataSizeB) < 0) {
-    alert("Tamaño de datos debe ser >= 0");
-    return;
-  }
-  if (Number(windowSize) < 1) {
-    alert("windowSize debe ser >= 1");
-    return;
-  }
-  if (Number(mss) < 1) {
-    alert("mss debe ser >= 1");
-    return;
-  }
-  const lr = parseFloat(lossRatio);
-  if (lr < 0 || lr > 1) {
-    alert("lossRatio debe estar entre 0 y 1");
-    return;
-  }
+  // Guardamos en variables globales para mostrar en postSim
+  globalDataSizeA = dataSizeA;
+  globalDataSizeB = dataSizeB;
 
   clearVisualization();
   clearStateHistories();
   showLoader();
 
+  // Enviamos estos nuevos campos a la API. En tu back-end, ajusta para asignar nodeA.seqNum = seqNumA, etc.
   fetchWithAuth("/start-simulation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataSizeA, dataSizeB, windowSize, mss, lossRatio }),
+    body: JSON.stringify({
+      dataSizeA,
+      dataSizeB,
+      windowSize,
+      mss,
+      lossRatio,
+      seqNumA,
+      seqNumB
+    }),
   })
     .then(r => r.json())
     .then(data => {
@@ -615,14 +577,20 @@ function startSimulation() {
         handleError({ message: data.error?.message || "Error al iniciar simulación" });
       } else {
         sessionStorage.setItem(`sim_${simulationId}_started`, "true");
-
-        // Deshabilitar inputs
-        document.getElementById("start-simulation-btn")?.setAttribute("disabled","disabled");
-        ["window-size-input","data-size-input-A","data-size-input-B","mss-input","loss-ratio-input"]
-          .forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.disabled = true;
-          });
+        const disableIds = [
+          "start-simulation-btn",
+          "window-size-input",
+          "data-size-input-A",
+          "data-size-input-B",
+          "mss-input",
+          "loss-ratio-input",
+          "seqnum-A-input",
+          "seqnum-B-input"
+        ];
+        disableIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = true;
+        });
 
         showPostSimulation();
         showToast("Simulación iniciada.");
@@ -638,6 +606,10 @@ function startSimulation() {
 /*    INIT APP (REALTIME)       */
 /********************************/
 function initApp() {
+  const simulationId = sessionStorage.getItem("currentSimulationId");
+  if (!simulationId) {
+    return;
+  }
   getState("A");
   getState("B");
   getHistory();
@@ -647,6 +619,11 @@ function initApp() {
 function startRealtimeUpdates() {
   stopRealtimeUpdates();
   updateInterval = setInterval(() => {
+    const simulationId = sessionStorage.getItem("currentSimulationId");
+    if (!simulationId) {
+      stopRealtimeUpdates();
+      return;
+    }
     getState("A");
     getState("B");
     getHistory();
@@ -661,6 +638,9 @@ function stopRealtimeUpdates() {
 /*   ESTADOS Y PARÁMETROS       */
 /********************************/
 function getState(nodeId) {
+  const simulationId = sessionStorage.getItem("currentSimulationId");
+  if (!simulationId) return;
+
   fetchWithAuth(`/state/${nodeId}`)
     .then(r => r.json())
     .then(data => {
@@ -674,6 +654,9 @@ function getState(nodeId) {
 }
 
 function updateTCPParams(nodeId) {
+  const simulationId = sessionStorage.getItem("currentSimulationId");
+  if (!simulationId) return;
+
   fetchWithAuth(`/param/${nodeId}`)
     .then(r => r.json())
     .then(data => {
@@ -682,22 +665,33 @@ function updateTCPParams(nodeId) {
         paramsElem.innerHTML = `
           <p>Puerto Origen: ${data.srcPort}</p>
           <p>Puerto Destino: ${data.destPort}</p>
-          <p>Número de Secuencia (ISN): ${data.seqNum}</p>
-          <p>Número de Acknowledgment: ${data.ackNum}</p>
-          <p>Tamaño de Ventana: ${data.windowSize}</p>
+          <p>Número de Secuencia: ${data.seqNum}</p>
+          <p>Ack: ${data.ackNum}</p>
+          <p>Tamaño Ventana: ${data.windowSize}</p>
           <p>MSS: ${data.MSS}</p>
-          <p>Ratio de Pérdida: ${data.lossRatio}</p>
+          <p>Ratio Pérdida: ${data.lossRatio}</p>
           <p>sendBase: ${data.sendBase}</p>
           <p>nextSeqNum: ${data.nextSeqNum}</p>
+          <p>cwnd: ${data.cwnd}</p>
         `;
-        const now = Date.now();
-        if (nodeId === "A") {
-          windowDataA.push({ time: now, windowSize: data.windowSize });
-        } else {
-          windowDataB.push({ time: now, windowSize: data.windowSize });
-        }
-        drawWindowChart();
       }
+
+      const now = Date.now();
+      if (nodeId === "A") {
+        windowDataA.push({
+          time: now,
+          advertisedWindow: data.windowSize,
+          cwnd: data.cwnd
+        });
+      } else {
+        windowDataB.push({
+          time: now,
+          advertisedWindow: data.windowSize,
+          cwnd: data.cwnd
+        });
+      }
+
+      drawWindowChart();
     })
     .catch(handleError);
 }
@@ -706,13 +700,15 @@ function updateTCPParams(nodeId) {
 /*         HISTORIAL TCP        */
 /********************************/
 function getHistory() {
-  fetchWithAuth(`/history`)
+  const simulationId = sessionStorage.getItem("currentSimulationId");
+  if (!simulationId) return;
+
+  fetchWithAuth("/history")
     .then(r => r.json())
     .then(data => {
       if (!data.success) return;
       messageData = data.history || [];
       if (messageData.length > 0) {
-        // parsear parameter_TCP
         messageData.forEach(m => {
           const isoDate = m.timestamp.replace(' ', 'T');
           m.startTime = new Date(isoDate);
@@ -728,9 +724,9 @@ function getHistory() {
           if (!param) return;
           const latency = param.latency || 0;
           m.arrivalTime = new Date(m.startTime.getTime() + latency);
-          m.param = param; // guardar param parseado
+          m.param = param;
         });
-        renderAll(); // Llamamos a la función que dibuja las flechas
+        renderAll();
 
         const historyA = document.getElementById("state-history-A");
         const historyB = document.getElementById("state-history-B");
@@ -738,11 +734,17 @@ function getHistory() {
         if (historyB) historyB.innerHTML = "";
 
         messageData.forEach(msg => {
-          if (!msg.param || !msg.param.flags) return;
-          const flags = msg.param.flags;
-          const activeFlags = Object.entries(flags).filter(([_, v]) => v).map(([k]) => k);
+          if (!msg.param) return;
+          const param = msg.param;
+          const flags = param.flags || {};
+          const isLost = param.isLost;
+          const lostLabel = isLost ? " [LOST]" : "";
+          const activeFlags = Object.entries(flags)
+            .filter(([_, v]) => v)
+            .map(([k]) => k);
+
           const li = document.createElement("li");
-          li.textContent = `Seq:${msg.param.seqNum}, Ack:${msg.param.ackNum}, Flags:[${activeFlags.join(", ")}], Len:${msg.len}`;
+          li.textContent = `Seq:${param.seqNum}, Ack:${param.ackNum}, Flags:[${activeFlags.join(", ")}], Len:${msg.len}${lostLabel}`;
           if (msg.node_id === "A") {
             historyA?.appendChild(li);
           } else {
@@ -762,10 +764,6 @@ function getHistory() {
 /********************************/
 /*  VISUALIZACIÓN D3 SIMULACIÓN */
 /********************************/
-
-/** 
- * Esta función ya dibuja el SVG base (flecha, líneas A/B...). 
- */
 function setupVisualSimulation() {
   const svg = d3.select("#simulation-visual");
   svg.html("");
@@ -785,7 +783,6 @@ function setupVisualSimulation() {
 
   svg.attr("height", 400);
 
-  // Líneas verticales A, B
   svg.append("line")
     .attr("id", "node-line-A")
     .attr("x1", 200)
@@ -794,6 +791,7 @@ function setupVisualSimulation() {
     .attr("y2", 350)
     .attr("stroke", "black")
     .attr("stroke-width", 3);
+
   svg.append("text")
     .attr("id", "node-label-A")
     .attr("x", 200)
@@ -811,6 +809,7 @@ function setupVisualSimulation() {
     .attr("y2", 350)
     .attr("stroke", "black")
     .attr("stroke-width", 3);
+
   svg.append("text")
     .attr("id", "node-label-B")
     .attr("x", 600)
@@ -820,7 +819,6 @@ function setupVisualSimulation() {
     .attr("font-size", "14px")
     .attr("fill", "black");
 
-  // Eje tiempo vertical
   svg.append("line")
     .attr("id", "time-axis")
     .attr("x1", 50)
@@ -831,15 +829,12 @@ function setupVisualSimulation() {
     .attr("stroke-width", 1);
 }
 
-/** 
- * createTimeScale: Configura la escala temporal según earliestTime y latestTime 
- */
 function createTimeScale(data) {
   if (!data || data.length === 0) {
     timeScale = null;
     return;
   }
-  const times = [];
+  let times = [];
   data.forEach(d => {
     times.push(d.startTime, d.arrivalTime);
   });
@@ -856,11 +851,10 @@ function createTimeScale(data) {
     .range([50, parseInt(zoomVal)]);
 }
 
-/**
- * renderAll: Filtra y llama a renderMessages con los datos filtrados
- */
 function renderAll() {
-  if (!messageData || messageData.length === 0) return;
+  if (!messageData || messageData.length === 0 || !timeScale) return;
+
+  arrowIdCounter = 1;
 
   const synChecked = document.getElementById("filter-syn")?.checked;
   const ackChecked = document.getElementById("filter-ack")?.checked;
@@ -868,9 +862,7 @@ function renderAll() {
   const dataChecked = document.getElementById("filter-data")?.checked;
 
   const filtered = messageData.filter(m => {
-    if (!m.param || !m.param.flags) {
-      return false; // Evitar TypeError
-    }
+    if (!m.param || !m.param.flags) return false;
     const flags = m.param.flags;
     const isPureAck = (flags.ACK && !flags.SYN && !flags.FIN && m.len === 0);
     const isData = (m.len > 0 && !flags.SYN && !flags.FIN && !isPureAck);
@@ -879,6 +871,7 @@ function renderAll() {
     if (isPureAck && !ackChecked) return false;
     if (flags.FIN && !finChecked) return false;
     if (isData && !dataChecked) return false;
+
     return true;
   });
 
@@ -886,22 +879,19 @@ function renderAll() {
   renderMessages(filtered);
 }
 
-/** 
- * renderMessages: dibuja las flechas.
- * Eliminamos las flechas anteriores antes de redibujar (para evitar duplicaciones).
- */
 function renderMessages(data) {
   const svg = d3.select("#simulation-visual");
-
-  // [CLAVE] Borrar flechas anteriores antes de dibujar nuevas
   svg.selectAll("g[id^='message-']").remove();
 
   if (!data || data.length === 0 || !timeScale) return;
 
-  // Ordenar por startTime
+  const arrowList = document.getElementById("arrow-list");
+  if (arrowList) {
+    arrowList.innerHTML = "";
+  }
+
   data.sort((a, b) => a.startTime - b.startTime);
 
-  // Asignar un pequeño offset (jitter) a mensajes muy cercanos
   for (let i = 0; i < data.length; i++) {
     let offsetCount = 0;
     for (let j = 0; j < i; j++) {
@@ -911,26 +901,20 @@ function renderMessages(data) {
       }
     }
     data[i].jitterOffset = offsetCount * messageVerticalJitter;
+
+    const arrowId = arrowIdCounter++;
+    drawMessageArrow(data[i], arrowId);
   }
-
-  // Dibujar cada mensaje
-  data.forEach(entry => {
-    drawMessageArrow(entry);
-  });
-
   updateSVGHeight();
 }
 
-/** 
- * drawMessageArrow: dibuja la flecha, su color y texto
- */
-function drawMessageArrow(entry) {
+function drawMessageArrow(entry, arrowId) {
   const svg = d3.select("#simulation-visual");
-  const group = svg.append("g")
-    .attr("id", `message-${entry.id}`);
+  const group = svg.append("g").attr("id", `message-${entry.id}`);
 
   const param = entry.param;
   const flags = param.flags;
+  const isLost = param.isLost;
   const isA = (entry.node_id === "A");
   const xA = 200;
   const xB = 600;
@@ -942,18 +926,18 @@ function drawMessageArrow(entry) {
   const xEnd = isA ? xB : xA;
 
   let lineColor = "red";
-  const isSyn = flags.SYN;
-  const isAck = (!flags.SYN && flags.ACK && !flags.FIN && entry.len === 0);
-  const isFin = flags.FIN && !flags.SYN;
-  const isData = (entry.len > 0 && !flags.SYN && !flags.FIN && !isAck);
+  if (flags.SYN && flags.ACK) lineColor = "green";
+  else if (flags.SYN) lineColor = "green";
+  else if (flags.FIN) lineColor = "orange";
+  else if (flags.ACK && !flags.SYN && !flags.FIN && entry.len === 0) lineColor = "blue";
+  if (isLost) {
+    lineColor = "gray";
+  }
 
-  if (isSyn && flags.ACK) lineColor = "green";
-  else if (isSyn) lineColor = "green";
-  else if (isFin) lineColor = "orange";
-  else if (isAck) lineColor = "blue";
-  else if (isData) lineColor = "red";
-
-  const messageText = `Seq: ${param.seqNum}, Ack: ${param.ackNum}, Flags: [${Object.keys(flags).filter(f => flags[f]).join(", ")}], Len: ${entry.len}`;
+  let messageText = `[#${arrowId}] Node=${entry.node_id}, Seq=${param.seqNum}, Ack=${param.ackNum}, Flags=[${Object.keys(flags).filter(f => flags[f]).join(", ")}], Len=${entry.len}`;
+  if (isLost) {
+    messageText += " [LOST]";
+  }
 
   const line = group.append("line")
     .attr("x1", xStart)
@@ -961,10 +945,21 @@ function drawMessageArrow(entry) {
     .attr("x2", xEnd)
     .attr("y2", yEnd)
     .attr("stroke", lineColor)
-    .attr("stroke-width", 2)
-    .attr("marker-end", "url(#arrowhead)");
+    .attr("stroke-width", 2);
 
-  // Tooltip
+  if (!isLost) {
+    line.attr("marker-end", "url(#arrowhead)");
+  }
+
+  // ID de la flecha al inicio
+  group.append("text")
+    .attr("x", xStart)
+    .attr("y", yStart - 5)
+    .attr("font-size", "12px")
+    .attr("fill", lineColor)
+    .attr("text-anchor", "middle")
+    .text(`#${arrowId}`);
+
   line.on("mouseover", (event) => {
     tooltip.style("opacity", 1)
       .attr("data-visible", "true")
@@ -975,7 +970,6 @@ function drawMessageArrow(entry) {
     tooltip.style("opacity", 0).attr("data-visible", "false");
   });
 
-  // Texto en la mitad
   const tempText = group.append("text")
     .attr("font-size", "12px")
     .text(messageText)
@@ -1005,6 +999,24 @@ function drawMessageArrow(entry) {
     .attr("fill", "black")
     .attr("text-anchor", "middle")
     .text(messageText);
+
+  if (isLost) {
+    group.append("text")
+      .attr("x", xEnd + (xEnd > xStart ? 10 : -10))
+      .attr("y", yEnd)
+      .attr("font-size", "14px")
+      .attr("fill", "red")
+      .text("X");
+  }
+
+  // Panel lateral
+  const arrowList = document.getElementById("arrow-list");
+  if (arrowList) {
+    const arrowItem = document.createElement("div");
+    arrowItem.className = "arrow-item";
+    arrowItem.textContent = `ID=#${arrowId}, node_id=${entry.node_id}, seq=${param.seqNum}, ack=${param.ackNum}, flags=${Object.keys(flags).filter(f=>flags[f]).join(",")}, len=${entry.len}, lost=${isLost||false}`;
+    arrowList.appendChild(arrowItem);
+  }
 }
 
 function updateSVGHeight() {
@@ -1059,6 +1071,7 @@ function updateSVGHeight() {
 /********************************/
 /*  GRÁFICA DE VENTANA (D3)     */
 /********************************/
+// Dibujamos 4 líneas: Ventana anunciada de A, cwnd de A, ventana anunciada de B, cwnd de B
 function drawWindowChart() {
   const windowChart = d3.select("#window-chart");
   if (!windowChart.node()) return;
@@ -1072,26 +1085,34 @@ function drawWindowChart() {
 
   const minT = d3.min(allTimes);
   const maxT = d3.max(allTimes);
-  const maxW = Math.max(
-    d3.max(windowDataA, d => d.windowSize) || 0,
-    d3.max(windowDataB, d => d.windowSize) || 0
-  );
+
+  const maxWA = d3.max(windowDataA, d => Math.max(d.advertisedWindow, d.cwnd)) || 0;
+  const maxWB = d3.max(windowDataB, d => Math.max(d.advertisedWindow, d.cwnd)) || 0;
+  const maxW = Math.max(maxWA, maxWB, 1);
 
   const xScale = d3.scaleTime()
     .domain([new Date(minT), new Date(maxT)])
     .range([50, 750]);
 
   const yScale = d3.scaleLinear()
-    .domain([0, maxW || 1])
+    .domain([0, maxW])
     .range([150, 50]);
 
-  const lineA = d3.line()
+  const lineA_adv = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.windowSize));
+    .y(d => yScale(d.advertisedWindow));
 
-  const lineB = d3.line()
+  const lineA_cwnd = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.windowSize));
+    .y(d => yScale(d.cwnd));
+
+  const lineB_adv = d3.line()
+    .x(d => xScale(new Date(d.time)))
+    .y(d => yScale(d.advertisedWindow));
+
+  const lineB_cwnd = d3.line()
+    .x(d => xScale(new Date(d.time)))
+    .y(d => yScale(d.cwnd));
 
   // Eje base
   windowChart.append("line")
@@ -1105,33 +1126,36 @@ function drawWindowChart() {
     .attr("x", 400)
     .attr("y", 180)
     .attr("text-anchor", "middle")
-    .text("Evolución de Window Size");
+    .text("Evolución de Ventanas (Advertida y cwnd)");
 
+  // Líneas para A
   if (windowDataA.length > 0) {
     windowChart.append("path")
       .datum(windowDataA)
-      .attr("d", lineA)
+      .attr("d", lineA_adv)
       .attr("stroke", "blue")
       .attr("fill", "none");
 
-    windowChart.append("text")
-      .attr("x", 60)
-      .attr("y", 60)
-      .attr("fill", "blue")
-      .text("Nodo A WindowSize");
+    windowChart.append("path")
+      .datum(windowDataA)
+      .attr("d", lineA_cwnd)
+      .attr("stroke", "lightblue")
+      .attr("fill", "none");
   }
+
+  // Líneas para B
   if (windowDataB.length > 0) {
     windowChart.append("path")
       .datum(windowDataB)
-      .attr("d", lineB)
+      .attr("d", lineB_adv)
       .attr("stroke", "green")
       .attr("fill", "none");
 
-    windowChart.append("text")
-      .attr("x", 60)
-      .attr("y", 80)
-      .attr("fill", "green")
-      .text("Nodo B WindowSize");
+    windowChart.append("path")
+      .datum(windowDataB)
+      .attr("d", lineB_cwnd)
+      .attr("stroke", "lightgreen")
+      .attr("fill", "none");
   }
 
   const xAxis = d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat("%H:%M:%S"));
@@ -1144,17 +1168,38 @@ function drawWindowChart() {
   windowChart.append("g")
     .attr("transform", "translate(50,0)")
     .call(yAxis);
+
+  // Pequeña leyenda
+  const legendData = [
+    { color: "blue", text: "A Advertised" },
+    { color: "lightblue", text: "A cwnd" },
+    { color: "green", text: "B Advertised" },
+    { color: "lightgreen", text: "B cwnd" }
+  ];
+
+  legendData.forEach((legendItem, i) => {
+    windowChart.append("rect")
+      .attr("x", 700)
+      .attr("y", 40 + i * 15)
+      .attr("width", 10)
+      .attr("height", 10)
+      .attr("fill", legendItem.color);
+
+    windowChart.append("text")
+      .attr("x", 715)
+      .attr("y", 50 + i * 15)
+      .attr("text-anchor", "start")
+      .attr("font-size", "11px")
+      .text(legendItem.text);
+  });
 }
 
 /********************************/
 /* LIMPIAR VISUAL E HISTORIAL   */
 /********************************/
 function clearVisualization() {
-  // Borra el SVG actual y re-crea la base
   d3.select("#simulation-visual").selectAll("*").remove();
   setupVisualSimulation();
-
-  // Borra la gráfica de ventana
   d3.select("#window-chart").selectAll("*").remove();
   windowDataA = [];
   windowDataB = [];
@@ -1166,7 +1211,7 @@ function clearStateHistories() {
 }
 
 /********************************/
-/*  FETCH CON TOKEN (AUTH)      */
+/* FETCH CON TOKEN (AUTH)       */
 /********************************/
 function fetchWithAuth(url, options = {}) {
   if (!options.headers) options.headers = {};
@@ -1190,7 +1235,7 @@ function fetchWithAuth(url, options = {}) {
 }
 
 /********************************/
-/* DRAG & DROP WIRESHARK FILE   */
+/* DRAG & DROP (Wireshark)      */
 /********************************/
 function handleFileDrop(event) {
   event.preventDefault();

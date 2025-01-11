@@ -510,3 +510,21 @@ footer a:hover {
 #simulation-visual {
   width: 100%;
 }
+
+.arrow-list-container {
+  float: right; 
+  width: 300px;
+  border: 1px solid #ccc;
+  padding: 10px;
+  margin-right: 10px;
+  height: 400px; /* o el alto que desees */
+  overflow-y: auto;
+}
+
+.arrow-item {
+  margin-bottom: 5px;
+  font-size: 14px;
+  border-bottom: 1px dashed #aaa;
+  padding: 4px 0;
+}
+
