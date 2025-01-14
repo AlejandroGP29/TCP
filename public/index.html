@@ -249,12 +249,23 @@
               <input type="range" id="loss-ratio-input" min="0" max="1" step="0.1" value="0"> 
               <span id="loss-ratio-value">0</span>
             </li>
-            <!-- NUEVOS CAMPOS DE seqNum -->
-            <li><strong>SeqNum Nodo A:</strong>
-              <input type="number" id="seqnum-A-input" value="1000">
+            
+            <li>
+              <strong>SeqNum Nodo A:</strong>
+              <label>
+                <input type="checkbox" id="auto-seq-a" checked>
+                Automático
+              </label>
+              <input type="number" id="seq-num-a" value="1000" disabled>
             </li>
-            <li><strong>SeqNum Nodo B:</strong>
-              <input type="number" id="seqnum-B-input" value="2000">
+    
+            <li>
+              <strong>SeqNum Nodo B:</strong>
+              <label>
+                <input type="checkbox" id="auto-seq-b" checked>
+                Automático
+              </label>
+              <input type="number" id="seq-num-b" value="2000" disabled>
             </li>
           </ul>
 
@@ -269,26 +280,17 @@
 
           <h3>Parámetros de los Nodos</h3>
           <div class="node-params-container">
-            <div>
+            <div style="float:left; width:45%;">
               <h4>Parámetros Nodo A</h4>
-              <!-- Se rellenan con updateTCPParams("A") -->
               <div id="tcp-params-A-post"></div>
-              <!-- NUEVO: Mostramos tamaño de datos de A -->
-              <p style="margin-top:6px;">
-                <strong>Datos A:</strong>
-                <span id="data-size-a-post"></span> bytes
-              </p>
+              <p><strong>Bytes Totales A:</strong> <span id="data-size-a-post"></span></p>
             </div>
-            <div>
+            <div style="float:right; width:45%;">
               <h4>Parámetros Nodo B</h4>
-              <!-- Se rellenan con updateTCPParams("B") -->
               <div id="tcp-params-B-post"></div>
-              <!-- NUEVO: Mostramos tamaño de datos de B -->
-              <p style="margin-top:6px;">
-                <strong>Datos B:</strong>
-                <span id="data-size-b-post"></span> bytes
-              </p>
+              <p><strong>Bytes Totales B:</strong> <span id="data-size-b-post"></span></p>
             </div>
+            <div style="clear:both;"></div>
           </div>
 
           <h3>Historial de Mensajes</h3>
@@ -318,8 +320,10 @@
           <span id="time-zoom-value">200</span>
 
           <div class="arrow-list-container">
-            <h3>Mensajes (Flechas)</h3>
-            <div id="arrow-list"></div>
+            <div class="arrow-mess-container">
+              <h3>Mensajes (Flechas)</h3>
+              <div id="arrow-list"></div>
+            </div>
           </div>
 
           <div id="visual-container" class="visual-container">

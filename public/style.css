@@ -438,6 +438,10 @@ footer a:hover {
   text-decoration: underline;
 }
 
+.param-list li {
+  margin-bottom: 12px;
+}
+
 /* Loader */
 #loader {
   position: fixed;
@@ -481,10 +485,10 @@ footer a:hover {
   animation: fadein 0.5s;
 }
 .toast.error {
-  background: #c0392b; /* rojo */
+  background: #c0392b;
 }
 .toast.success {
-  background: #27ae60; /* verde */
+  background: #27ae60;
 }
 @keyframes fadein {
   from {opacity:0;}
@@ -507,20 +511,29 @@ footer a:hover {
   opacity: 1;
 }
 
-#simulation-visual {
-  width: 100%;
+/* Visual Container */
+.visual-container {
+  border:1px solid #ccc;
+  border-radius:5px;
+  overflow-y:auto;
+  height:400px;
+  margin-bottom:20px;
 }
 
+#simulation-visual {
+  width:100%;
+}
+
+/* Arrow List */
 .arrow-list-container {
-  float: right; 
+  float: right;
   width: 300px;
   border: 1px solid #ccc;
-  padding: 10px;
-  margin-right: 10px;
-  height: 400px; /* o el alto que desees */
+  margin-right: 20px;
+  height: 400px;
   overflow-y: auto;
+  margin-top: 18px;
 }
-
 .arrow-item {
   margin-bottom: 5px;
   font-size: 14px;
@@ -528,3 +541,36 @@ footer a:hover {
   padding: 4px 0;
 }
 
+/* Historial */
+.history-container {
+  display:flex;
+  gap:30px;
+}
+.message-list {
+  list-style:none;
+  padding:10px;
+  border:1px solid #ccc;
+  border-radius:5px;
+  max-height:200px;
+  overflow:auto;
+}
+
+footer {
+  background-color: #f1f1f1;
+  padding: 10px 0;
+  text-align: center;
+  margin-top: auto;
+  font-size: 0.9rem;
+}
+footer p {
+  margin: 5px 0;
+  color: #666;
+}
+footer a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-speed);
+}
+footer a:hover {
+  text-decoration: underline;
+}

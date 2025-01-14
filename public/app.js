@@ -1,5 +1,3 @@
-// app.js
-
 /********************************/
 /*      VARIABLES GLOBALES      */
 /********************************/
@@ -17,20 +15,21 @@ let timeScale = null;
 let messageVerticalJitter = 5;
 let timeThresholdForJitter = 200;
 
-// Datos para la gráfica de la ventana
-// Ahora guardamos dos valores por nodo: advertisedWindow y cwnd
+/********************************/
+// [MODIFICADO para 4 líneas de ventana/cwnd]
+// En lugar de windowDataA y windowDataB, tendremos 4 arrays:
+// 1) A-window  2) A-cwnd  3) B-window  4) B-cwnd
+/********************************/
 let windowDataA = [];
+let cwndDataA = [];
 let windowDataB = [];
+let cwndDataB = [];
 
 // Tooltip D3
 let tooltip = null;
 
-// Contador para asignar IDs a las flechas
+// Contador global de flechas
 let arrowIdCounter = 1;
-
-// [NUEVO] Guardamos también los valores dataSizeA y dataSizeB globalmente
-let globalDataSizeA = 0;
-let globalDataSizeB = 0;
 
 /********************************/
 /* LOADER Y TOASTS              */
@@ -57,7 +56,7 @@ function showToast(message, type="success") {
 }
 
 /********************************/
-/*  MANEJO CENTRALIZADO ERRORES */
+/* MANEJO CENTRALIZADO ERRORES  */
 /********************************/
 function handleError(error) {
   console.error(error);
@@ -66,7 +65,7 @@ function handleError(error) {
 }
 
 /********************************/
-/*    ROUTER DE VISTAS (HASH)   */
+/* ROUTER DE VISTAS (HASH)      */
 /********************************/
 document.addEventListener("DOMContentLoaded", () => {
   const savedHash = sessionStorage.getItem("lastHash");
@@ -98,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("filter-fin")?.addEventListener("change", renderAll);
   document.getElementById("filter-data")?.addEventListener("change", renderAll);
 
-  // Zoom temporal
+  // Zoom
   const zoomInput = document.getElementById("time-zoom-input");
   if (zoomInput) {
     zoomInput.addEventListener("input", () => {
@@ -112,6 +111,22 @@ document.addEventListener("DOMContentLoaded", () => {
   if (lossRatioInput) {
     lossRatioInput.addEventListener("input", () => {
       document.getElementById("loss-ratio-value").textContent = lossRatioInput.value;
+    });
+  }
+
+  // Checkboxes de secuencia manual
+  const autoSeqA = document.getElementById("auto-seq-a");
+  const seqNumAInput = document.getElementById("seq-num-a");
+  if (autoSeqA && seqNumAInput) {
+    autoSeqA.addEventListener("change", () => {
+      seqNumAInput.disabled = autoSeqA.checked;
+    });
+  }
+  const autoSeqB = document.getElementById("auto-seq-b");
+  const seqNumBInput = document.getElementById("seq-num-b");
+  if (autoSeqB && seqNumBInput) {
+    autoSeqB.addEventListener("change", () => {
+      seqNumBInput.disabled = autoSeqB.checked;
     });
   }
 
@@ -205,8 +220,10 @@ function showPreSimulation() {
     "data-size-input-B",
     "mss-input",
     "loss-ratio-input",
-    "seqnum-A-input",
-    "seqnum-B-input"
+    "auto-seq-a",
+    "auto-seq-b",
+    "seq-num-a",
+    "seq-num-b"
   ];
   inputs.forEach(id => {
     const el = document.getElementById(id);
@@ -221,16 +238,10 @@ function showPostSimulation() {
   const postSim = document.getElementById("post-simulation");
   if (preSim) preSim.style.display = "none";
   if (postSim) postSim.style.display = "block";
-
-  // [NUEVO] Mostramos tamaño datos A y B
-  const dataSizeSpanA = document.getElementById("data-size-a-post");
-  const dataSizeSpanB = document.getElementById("data-size-b-post");
-  if (dataSizeSpanA) dataSizeSpanA.textContent = globalDataSizeA;
-  if (dataSizeSpanB) dataSizeSpanB.textContent = globalDataSizeB;
 }
 
 /********************************/
-/*   MENÚ USUARIO & BOTONES     */
+/* MENÚ USUARIO & BOTONES       */
 /********************************/
 function updateUserMenu() {
   const userIcon = document.getElementById("user-icon");
@@ -478,7 +489,7 @@ function selectSimulation(simulationId) {
         clearStateHistories();
         initApp();
 
-        // Revisamos historial
+        // Revisar historial
         const historyResp = await fetchWithAuth("/history");
         const historyData = await historyResp.json();
 
@@ -538,25 +549,33 @@ function startSimulation() {
     return;
   }
 
-  // [NUEVO] Tomamos los valores de seqNumA y seqNumB
-  const seqNumA = document.getElementById("seqnum-A-input")?.value || "0";
-  const seqNumB = document.getElementById("seqnum-B-input")?.value || "0";
-
   const dataSizeA = document.getElementById("data-size-input-A")?.value || "0";
   const dataSizeB = document.getElementById("data-size-input-B")?.value || "0";
   const windowSize = document.getElementById("window-size-input")?.value || "1024";
   const mss = document.getElementById("mss-input")?.value || "1460";
   const lossRatio = document.getElementById("loss-ratio-input")?.value || "0";
 
-  // Guardamos en variables globales para mostrar en postSim
-  globalDataSizeA = dataSizeA;
-  globalDataSizeB = dataSizeB;
+  const autoSeqA = document.getElementById("auto-seq-a")?.checked;
+  const seqNumAInput = document.getElementById("seq-num-a");
+  let seqNumA = undefined;
+  if (!autoSeqA && seqNumAInput && seqNumAInput.value) {
+    seqNumA = parseInt(seqNumAInput.value) || 0;
+  }
+
+  const autoSeqB = document.getElementById("auto-seq-b")?.checked;
+  const seqNumBInput = document.getElementById("seq-num-b");
+  let seqNumB = undefined;
+  if (!autoSeqB && seqNumBInput && seqNumBInput.value) {
+    seqNumB = parseInt(seqNumBInput.value) || 0;
+  }
+
+  sessionStorage.setItem("dataSizeA", dataSizeA);
+  sessionStorage.setItem("dataSizeB", dataSizeB);
 
   clearVisualization();
   clearStateHistories();
   showLoader();
 
-  // Enviamos estos nuevos campos a la API. En tu back-end, ajusta para asignar nodeA.seqNum = seqNumA, etc.
   fetchWithAuth("/start-simulation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -577,17 +596,13 @@ function startSimulation() {
         handleError({ message: data.error?.message || "Error al iniciar simulación" });
       } else {
         sessionStorage.setItem(`sim_${simulationId}_started`, "true");
-        const disableIds = [
-          "start-simulation-btn",
-          "window-size-input",
-          "data-size-input-A",
-          "data-size-input-B",
-          "mss-input",
-          "loss-ratio-input",
-          "seqnum-A-input",
-          "seqnum-B-input"
-        ];
-        disableIds.forEach(id => {
+        document.getElementById("start-simulation-btn")?.setAttribute("disabled","disabled");
+        
+        [
+          "window-size-input","data-size-input-A","data-size-input-B",
+          "mss-input","loss-ratio-input",
+          "auto-seq-a","auto-seq-b","seq-num-a","seq-num-b"
+        ].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.disabled = true;
         });
@@ -653,6 +668,7 @@ function getState(nodeId) {
     .catch(handleError);
 }
 
+// [MODIFICADO para 4 líneas de ventana/cwnd]
 function updateTCPParams(nodeId) {
   const simulationId = sessionStorage.getItem("currentSimulationId");
   if (!simulationId) return;
@@ -663,11 +679,10 @@ function updateTCPParams(nodeId) {
       const paramsElem = document.getElementById(`tcp-params-${nodeId}`);
       if (paramsElem && data) {
         paramsElem.innerHTML = `
-          <p>Puerto Origen: ${data.srcPort}</p>
-          <p>Puerto Destino: ${data.destPort}</p>
-          <p>Número de Secuencia: ${data.seqNum}</p>
+          <p><strong>Initial SeqNum:</strong> ${data.initialSeqNum}</p>
+          <p><strong>SeqNum Actual:</strong> ${data.seqNum}</p>
           <p>Ack: ${data.ackNum}</p>
-          <p>Tamaño Ventana: ${data.windowSize}</p>
+          <p>Ventana: ${data.windowSize}</p>
           <p>MSS: ${data.MSS}</p>
           <p>Ratio Pérdida: ${data.lossRatio}</p>
           <p>sendBase: ${data.sendBase}</p>
@@ -676,19 +691,49 @@ function updateTCPParams(nodeId) {
         `;
       }
 
-      const now = Date.now();
+      // Post-simulation
       if (nodeId === "A") {
-        windowDataA.push({
-          time: now,
-          advertisedWindow: data.windowSize,
-          cwnd: data.cwnd
-        });
+        const postA = document.getElementById("tcp-params-A-post");
+        if (postA && data) {
+          postA.innerHTML = `
+            <p><strong>Initial SeqNum:</strong> ${data.initialSeqNum}</p>
+            <p><strong>SeqNum:</strong> ${data.seqNum}</p>
+            <p>AckNum: ${data.ackNum}</p>
+            <p>Ventana: ${data.windowSize}</p>
+            <p>MSS: ${data.MSS}</p>
+            <p>Ratio Pérdida: ${data.lossRatio}</p>
+            <p>cwnd: ${data.cwnd}</p>
+          `;
+        }
+        const aSizePost = document.getElementById("data-size-a-post");
+        if (aSizePost) {
+          aSizePost.textContent = sessionStorage.getItem("dataSizeA") || "--";
+        }
+        // Guardamos puntos de A
+        const now = Date.now();
+        windowDataA.push({ time: now, value: data.windowSize });
+        cwndDataA.push({ time: now, value: data.cwnd });
       } else {
-        windowDataB.push({
-          time: now,
-          advertisedWindow: data.windowSize,
-          cwnd: data.cwnd
-        });
+        const postB = document.getElementById("tcp-params-B-post");
+        if (postB && data) {
+          postB.innerHTML = `
+            <p><strong>Initial SeqNum:</strong> ${data.initialSeqNum}</p>
+            <p><strong>SeqNum:</strong> ${data.seqNum}</p>
+            <p>AckNum: ${data.ackNum}</p>
+            <p>Ventana: ${data.windowSize}</p>
+            <p>MSS: ${data.MSS}</p>
+            <p>Ratio Pérdida: ${data.lossRatio}</p>
+            <p>cwnd: ${data.cwnd}</p>
+          `;
+        }
+        const bSizePost = document.getElementById("data-size-b-post");
+        if (bSizePost) {
+          bSizePost.textContent = sessionStorage.getItem("dataSizeB") || "--";
+        }
+        // Guardamos puntos de B
+        const now = Date.now();
+        windowDataB.push({ time: now, value: data.windowSize });
+        cwndDataB.push({ time: now, value: data.cwnd });
       }
 
       drawWindowChart();
@@ -697,7 +742,7 @@ function updateTCPParams(nodeId) {
 }
 
 /********************************/
-/*         HISTORIAL TCP        */
+/* HISTORIAL TCP                */
 /********************************/
 function getHistory() {
   const simulationId = sessionStorage.getItem("currentSimulationId");
@@ -728,6 +773,7 @@ function getHistory() {
         });
         renderAll();
 
+        // Historial textual
         const historyA = document.getElementById("state-history-A");
         const historyB = document.getElementById("state-history-B");
         if (historyA) historyA.innerHTML = "";
@@ -762,7 +808,7 @@ function getHistory() {
 }
 
 /********************************/
-/*  VISUALIZACIÓN D3 SIMULACIÓN */
+/* VISUALIZACIÓN D3 SIMULACIÓN  */
 /********************************/
 function setupVisualSimulation() {
   const svg = d3.select("#simulation-visual");
@@ -852,10 +898,11 @@ function createTimeScale(data) {
 }
 
 function renderAll() {
-  if (!messageData || messageData.length === 0 || !timeScale) return;
+  if (!messageData || messageData.length === 0) return;
 
   arrowIdCounter = 1;
 
+  createTimeScale(messageData);
   const synChecked = document.getElementById("filter-syn")?.checked;
   const ackChecked = document.getElementById("filter-ack")?.checked;
   const finChecked = document.getElementById("filter-fin")?.checked;
@@ -875,7 +922,6 @@ function renderAll() {
     return true;
   });
 
-  createTimeScale(filtered);
   renderMessages(filtered);
 }
 
@@ -883,12 +929,12 @@ function renderMessages(data) {
   const svg = d3.select("#simulation-visual");
   svg.selectAll("g[id^='message-']").remove();
 
-  if (!data || data.length === 0 || !timeScale) return;
-
   const arrowList = document.getElementById("arrow-list");
   if (arrowList) {
     arrowList.innerHTML = "";
   }
+
+  if (!data || data.length === 0 || !timeScale) return;
 
   data.sort((a, b) => a.startTime - b.startTime);
 
@@ -951,7 +997,6 @@ function drawMessageArrow(entry, arrowId) {
     line.attr("marker-end", "url(#arrowhead)");
   }
 
-  // ID de la flecha al inicio
   group.append("text")
     .attr("x", xStart)
     .attr("y", yStart - 5)
@@ -1009,7 +1054,6 @@ function drawMessageArrow(entry, arrowId) {
       .text("X");
   }
 
-  // Panel lateral
   const arrowList = document.getElementById("arrow-list");
   if (arrowList) {
     const arrowItem = document.createElement("div");
@@ -1025,7 +1069,8 @@ function updateSVGHeight() {
 
   const lines = d3.selectAll("#simulation-visual line").nodes();
   const maxY = d3.max(lines, line =>
-    Math.max(parseFloat(line.getAttribute("y1")), parseFloat(line.getAttribute("y2")))) || 400;
+    Math.max(parseFloat(line.getAttribute("y1")), parseFloat(line.getAttribute("y2")))
+  ) || 400;
 
   const requiredHeight = maxY + 50;
   svgElement.setAttribute("height", requiredHeight);
@@ -1038,7 +1083,7 @@ function updateSVGHeight() {
     const svg = d3.select("#simulation-visual");
     svg.selectAll(".time-tick").remove();
 
-    let dateRange = (latestTime - earliestTime);
+    let dateRange = latestTime - earliestTime;
     let tickCount = 10;
     let tickInterval = dateRange / tickCount;
     let ticks = [];
@@ -1069,50 +1114,57 @@ function updateSVGHeight() {
 }
 
 /********************************/
-/*  GRÁFICA DE VENTANA (D3)     */
+/*  GRÁFICA DE VENTANA (4 LÍNEAS) */
 /********************************/
-// Dibujamos 4 líneas: Ventana anunciada de A, cwnd de A, ventana anunciada de B, cwnd de B
 function drawWindowChart() {
   const windowChart = d3.select("#window-chart");
   if (!windowChart.node()) return;
 
   windowChart.selectAll("*").remove();
 
-  const timesA = windowDataA.map(d => d.time);
-  const timesB = windowDataB.map(d => d.time);
-  const allTimes = timesA.concat(timesB);
+  // [MODIFICADO] Reunimos TODOS los tiempos
+  const allTimes = [
+    ...windowDataA.map(d => d.time),
+    ...cwndDataA.map(d => d.time),
+    ...windowDataB.map(d => d.time),
+    ...cwndDataB.map(d => d.time)
+  ];
   if (allTimes.length === 0) return;
 
   const minT = d3.min(allTimes);
   const maxT = d3.max(allTimes);
 
-  const maxWA = d3.max(windowDataA, d => Math.max(d.advertisedWindow, d.cwnd)) || 0;
-  const maxWB = d3.max(windowDataB, d => Math.max(d.advertisedWindow, d.cwnd)) || 0;
-  const maxW = Math.max(maxWA, maxWB, 1);
+  // tomamos el máximo de la window y cwnd
+  const maxWindowVal = Math.max(
+    d3.max(windowDataA, d => d.value) || 0,
+    d3.max(cwndDataA, d => d.value) || 0,
+    d3.max(windowDataB, d => d.value) || 0,
+    d3.max(cwndDataB, d => d.value) || 0
+  );
 
   const xScale = d3.scaleTime()
     .domain([new Date(minT), new Date(maxT)])
     .range([50, 750]);
 
   const yScale = d3.scaleLinear()
-    .domain([0, maxW])
+    .domain([0, maxWindowVal || 1])
     .range([150, 50]);
 
-  const lineA_adv = d3.line()
+  const lineAWindow = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.advertisedWindow));
+    .y(d => yScale(d.value));
 
-  const lineA_cwnd = d3.line()
+  const lineACwnd = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.cwnd));
+    .y(d => yScale(d.value));
 
-  const lineB_adv = d3.line()
+  const lineBWindow = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.advertisedWindow));
+    .y(d => yScale(d.value));
 
-  const lineB_cwnd = d3.line()
+  const lineBCwnd = d3.line()
     .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.cwnd));
+    .y(d => yScale(d.value));
 
   // Eje base
   windowChart.append("line")
@@ -1126,36 +1178,67 @@ function drawWindowChart() {
     .attr("x", 400)
     .attr("y", 180)
     .attr("text-anchor", "middle")
-    .text("Evolución de Ventanas (Advertida y cwnd)");
+    .text("Evolución de Window Size y cwnd");
 
-  // Líneas para A
+  // 1) Ventana A (azul)
   if (windowDataA.length > 0) {
     windowChart.append("path")
       .datum(windowDataA)
-      .attr("d", lineA_adv)
+      .attr("d", lineAWindow)
       .attr("stroke", "blue")
       .attr("fill", "none");
 
-    windowChart.append("path")
-      .datum(windowDataA)
-      .attr("d", lineA_cwnd)
-      .attr("stroke", "lightblue")
-      .attr("fill", "none");
+    // Leyenda
+    windowChart.append("text")
+      .attr("x", 60)
+      .attr("y", 40)
+      .attr("fill", "blue")
+      .text("Nodo A - Window");
   }
 
-  // Líneas para B
+  // 2) cwnd A (azul oscuro)
+  if (cwndDataA.length > 0) {
+    windowChart.append("path")
+      .datum(cwndDataA)
+      .attr("d", lineACwnd)
+      .attr("stroke", "darkblue")
+      .attr("fill", "none");
+
+    windowChart.append("text")
+      .attr("x", 60)
+      .attr("y", 55)
+      .attr("fill", "darkblue")
+      .text("Nodo A - cwnd");
+  }
+
+  // 3) Ventana B (verde)
   if (windowDataB.length > 0) {
     windowChart.append("path")
       .datum(windowDataB)
-      .attr("d", lineB_adv)
+      .attr("d", lineBWindow)
       .attr("stroke", "green")
       .attr("fill", "none");
 
+    windowChart.append("text")
+      .attr("x", 200)
+      .attr("y", 40)
+      .attr("fill", "green")
+      .text("Nodo B - Window");
+  }
+
+  // 4) cwnd B (verde oscuro)
+  if (cwndDataB.length > 0) {
     windowChart.append("path")
-      .datum(windowDataB)
-      .attr("d", lineB_cwnd)
-      .attr("stroke", "lightgreen")
+      .datum(cwndDataB)
+      .attr("d", lineBCwnd)
+      .attr("stroke", "darkgreen")
       .attr("fill", "none");
+
+    windowChart.append("text")
+      .attr("x", 200)
+      .attr("y", 55)
+      .attr("fill", "darkgreen")
+      .text("Nodo B - cwnd");
   }
 
   const xAxis = d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat("%H:%M:%S"));
@@ -1168,30 +1251,6 @@ function drawWindowChart() {
   windowChart.append("g")
     .attr("transform", "translate(50,0)")
     .call(yAxis);
-
-  // Pequeña leyenda
-  const legendData = [
-    { color: "blue", text: "A Advertised" },
-    { color: "lightblue", text: "A cwnd" },
-    { color: "green", text: "B Advertised" },
-    { color: "lightgreen", text: "B cwnd" }
-  ];
-
-  legendData.forEach((legendItem, i) => {
-    windowChart.append("rect")
-      .attr("x", 700)
-      .attr("y", 40 + i * 15)
-      .attr("width", 10)
-      .attr("height", 10)
-      .attr("fill", legendItem.color);
-
-    windowChart.append("text")
-      .attr("x", 715)
-      .attr("y", 50 + i * 15)
-      .attr("text-anchor", "start")
-      .attr("font-size", "11px")
-      .text(legendItem.text);
-  });
 }
 
 /********************************/
@@ -1201,8 +1260,12 @@ function clearVisualization() {
   d3.select("#simulation-visual").selectAll("*").remove();
   setupVisualSimulation();
   d3.select("#window-chart").selectAll("*").remove();
+
+  // [MODIFICADO] Limpiar arrays
   windowDataA = [];
+  cwndDataA = [];
   windowDataB = [];
+  cwndDataB = [];
 }
 
 function clearStateHistories() {
@@ -1221,9 +1284,7 @@ function fetchWithAuth(url, options = {}) {
       let data = null;
       try {
         data = await response.json();
-      } catch (err) {
-        // data remains null
-      }
+      } catch (err) {}
       if (data && data.error) {
         throw new Error(data.error.message);
       } else {

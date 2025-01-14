@@ -92,9 +92,7 @@ class TCPNode {
     this.peerMSS = 1460;
 
     // [MODIFICADO para handshakeLossRatio]
-    // Agregamos handshakeLossRatio y lo ponemos en 0 (o un valor muy bajo) para evitar
-    // perder paquetes de handshake. Mantenemos lossRatio para los datos normales.
-    this.handshakeLossRatio = 0; // Casi 0 para evitar pérdida en el handshake
+    this.handshakeLossRatio = 0; // Casi 0 para evitar pérdida en handshake
     this.lossRatio = 0.0;        // Pérdida normal para datos
 
     this.ackReceived = false;
@@ -194,6 +192,10 @@ class TCPNode {
 
     // [MEJORA] Contador de timeouts consecutivos
     this.timeoutCount = 0;
+
+    // [NEW] Guardamos la seq del FIN recibido del otro lado, para saber
+    //       hasta dónde deben llegar los datos. (TCP real trackea fin_seq).
+    this.partnerFinSeq = null;
   }
 
   _cleanupTimers() {
@@ -231,6 +233,15 @@ class TCPNode {
       this._timeWaitTimerId=null;
     }
     this._log(`Timers limpiados en _cleanupTimers()`);
+  }
+
+  // [NEW] Limpia también los segmentos en vuelo y sus timers
+  _clearOutstandingSegments() {
+    for (let [seqNum, segInfo] of this.outstandingSegments) {
+      clearTimeout(segInfo.timerId);
+    }
+    this.outstandingSegments.clear();
+    this._log(`Outstanding segments limpiados en _clearOutstandingSegments().`);
   }
 
   _log(message) {
@@ -390,8 +401,16 @@ class TCPNode {
     }
     if(this.state!==prevState){
       this._log(`Estado cambiado: ${prevState} -> ${this.state}`);
+
+      // [NEW] Al pasar a TIME_WAIT, limpiamos outstandingSegments
+      if(this.state===this.states.TIME_WAIT){
+        this._clearOutstandingSegments();
+      }
+
       if(this.state===this.states.CLOSED){
+        // [NEW] Al cerrar, limpiamos timers y outstandingSegments
         this._cleanupTimers();
+        this._clearOutstandingSegments();
       }
     }
   }
@@ -561,6 +580,12 @@ class TCPNode {
     } else if(action==="recv_fin"){
       this._log(`Recibido FIN del partner, cerrando hacia CLOSE_WAIT`);
       this.state=this.states.CLOSE_WAIT;
+
+      // [NEW] Guardamos la seq del FIN para saber hasta dónde hay datos.
+      if(!this.partnerFinSeq) {
+        this.partnerFinSeq = this.partnerNode.seqNum; 
+      }
+
       if(!this.partnerNode || typeof this.partnerNode.seqNum!=='number'){
         this._log(`Advertencia: partnerNode no definido o seqNum inválido antes de asignar ackNum.`);
         return;
@@ -574,6 +599,7 @@ class TCPNode {
         this.closing=true;
         this.state=this.states.FIN_WAIT_1;
         this.seqNum=this.nextSeqNum;
+        this.ackNum=this.partnerNode.seqNum;
         let flags={FIN:true};
         let options={
           MSS:this.MSS,
@@ -601,6 +627,12 @@ class TCPNode {
     } else if(action==="recv_fin"){
       this._log(`Recibido FIN mientras en FIN_WAIT_1, pasando a CLOSING`);
       this.state=this.states.CLOSING;
+
+      // [NEW] Si recibimos FIN, guardamos seq para saber dónde acaba.
+      if(!this.partnerFinSeq) {
+        this.partnerFinSeq = this.partnerNode.seqNum;
+      }
+
       if(!this.partnerNode || typeof this.partnerNode.seqNum!=='number'){
         this._log(`Advertencia: partnerNode no definido o seqNum inválido en FIN_WAIT_1.`);
         return;
@@ -614,6 +646,12 @@ class TCPNode {
     if(action==="recv_fin"){
       this._log(`Recibido FIN mientras en FIN_WAIT_2, pasando a TIME_WAIT`);
       this.state=this.states.TIME_WAIT;
+
+      // [NEW] Guardamos la seq del FIN
+      if(!this.partnerFinSeq) {
+        this.partnerFinSeq = this.partnerNode.seqNum;
+      }
+
       if(!this.partnerNode || typeof this.partnerNode.seqNum!=='number'){
         this._log(`Advertencia: partnerNode no definido o seqNum inválido en FIN_WAIT_2.`);
         return;
@@ -628,6 +666,13 @@ class TCPNode {
     if(action==="send_data"){
       this._log(`Enviando datos en CLOSE_WAIT`);
       this.trySendOneSegment(simulationId);
+
+      // [NEW] Comprobamos si ya tenemos todos los datos de partner (si finSec no es nulo)
+      // Si rcv_next >= partnerFinSeq+1, ya llegó todo.
+      if(this.partnerFinSeq!==null && this.rcv_next >= this.partnerFinSeq+1){
+        this._log(`Ya se recibió todo del partner (rcv_next >= finSeq+1).`);
+      }
+
       if(this.pendingDataSize===0 && !this.closing){
         this._scheduleClose(simulationId);
       }
@@ -671,7 +716,10 @@ class TCPNode {
     }
   }
 
-  _handleTimeWait(action,simulationId){}
+  _handleTimeWait(action,simulationId){
+    // [CHANGED] Normalmente no hay nada que hacer, se espera TIME_WAIT expire.
+    // SÍ limpiamos en _startTimeWaitTimer / state change -> TIME_WAIT.
+  }
 
   setPartner(node){
     this._log(`Asociando partnerNode: ${node.nodeId}`);
@@ -814,12 +862,12 @@ class TCPNode {
   }
 
   // [MODIFICADO para handshakeLossRatio vs lossRatio]
+  // [CHANGED] Ya no se hace return inmediato si se pierde.
   sendMessage(message,dataSize,simulationId){
     message.len=dataSize;
     message.srcNodeId=this.nodeId;
 
     // Determinamos si este mensaje es parte del handshake
-    // (SYN, SYN+ACK, o ACK final del handshake). Simplificamos:
     const isHandshakePacket = 
       (message.flags.SYN && !message.flags.ACK)  || // SYN
       (message.flags.SYN && message.flags.ACK)   || // SYN+ACK
@@ -828,28 +876,24 @@ class TCPNode {
         message.len === 0 && 
         !message.flags.SYN && 
         !message.flags.FIN &&
-        // Chequeo de ackNum vs iss+1, si queremos ser estrictos
         (message.ackNum === (this.iss+1) || this.state === this.states.SYN_SENT)
       );
 
     let effectiveLossRatio = isHandshakePacket ? this.handshakeLossRatio : this.lossRatio;
+    const isLost = (Math.random() < effectiveLossRatio);
 
-    if(Math.random() < effectiveLossRatio){
+    if(isLost){
       this._log(`Paquete (seq=${message.seqNum}) PERDIDO (handshake? ${isHandshakePacket}). No se entrega a partnerNode.`);
-      // guardamos en DB con isLost=true
       this.saveMessage(message, dataSize, simulationId, this.nodeId, true);
-      return;
+    } else {
+      this.saveMessage(message, dataSize, simulationId, this.nodeId, false);
     }
 
-    // No se pierde
-    this.saveMessage(message, dataSize, simulationId, this.nodeId, false);
-
-    const sendTime=Date.now();
-    const needsTimer=(!message.flags.SYN && !message.flags.FIN && dataSize>0 && !message.flags.RST);
-    let sentTSval=(this.timestampsEnabled)?this.lastTSvalSent:null;
-
+    // Programar timer si no es SYN/RST y (tiene data>0 o FIN)
+    const needsTimer = (!message.flags.SYN && !message.flags.RST && (dataSize>0 || message.flags.FIN));
     if(needsTimer){
-      let endSeqNum=message.seqNum+dataSize;
+      let endSeqNum=message.seqNum + dataSize;
+
       const timerId=setTimeout(()=>{
         this._handleRetransmission(message.seqNum,simulationId);
       },this.RTO);
@@ -873,18 +917,21 @@ class TCPNode {
         message:message,
         endSeqNum:endSeqNum,
         timerId:timerId,
-        sendTime:sendTime,
+        sendTime:Date.now(),
         retransmitted:false,
-        sentTSval:sentTSval,
+        sentTSval:(this.timestampsEnabled)?this.lastTSvalSent:null,
         originalParams:originalParams
       });
     }
 
+    // [CHANGED] No se hace return. Simulamos entrega tras la latencia si no se pierde.
     setTimeout(()=>{
-      if(this.partnerNode){
-        this.partnerNode.receiveMessage(message,simulationId);
-      } else {
-        this._log(`No partnerNode definido, no se puede entregar el mensaje (seq=${message.seqNum}).`);
+      if(!isLost){
+        if(this.partnerNode){
+          this.partnerNode.receiveMessage(message,simulationId);
+        } else {
+          this._log(`No partnerNode definido, no se puede entregar el mensaje (seq=${message.seqNum}).`);
+        }
       }
     },this.latency);
   }
@@ -902,6 +949,7 @@ class TCPNode {
       return;
     }
 
+    // [NEW] Si estamos CLOSED/LISTEN y no es SYN => enviamos RST
     if((this.state===this.states.CLOSED||this.state===this.states.LISTEN)&&!packet.flags.SYN){
       this._log(`Recibido segmento en estado ${this.state} sin SYN, enviando RST`);
       this.seqNum=this.nextSeqNum;
@@ -919,10 +967,13 @@ class TCPNode {
     if(packet.flags.RST){
       this._log(`Recibido RST, cerrando conexión.`);
       this.state=this.states.CLOSED;
+      // [NEW] Al cerrar: 
       this._cleanupTimers();
+      this._clearOutstandingSegments();
       return;
     }
 
+    // TIME_WAIT + FIN => reenviamos ACK y reiniciamos timer
     if(this.state===this.states.TIME_WAIT && packet.flags.FIN){
       this._log(`Recibido FIN en TIME_WAIT, reenviando ACK`);
       this.ackNum=packet.seqNum+1;
@@ -931,6 +982,7 @@ class TCPNode {
       return;
     }
 
+    // Manejo de handshake
     if(packet.flags.SYN && !packet.flags.ACK){
       this._log(`Recibido SYN, respondiendo con SYN+ACK`);
       this.state=this.states.SYN_RECEIVED;
@@ -1019,7 +1071,7 @@ class TCPNode {
         let current=newSACKBlocks[0];
 
         for(let i=1;i<newSACKBlocks.length;i++){
-          let [sstart,send]=newSACKBlocks[i];
+          let [sstart, send]=newSACKBlocks[i];
           if(sstart<=current[1]+1){
             if(send>current[1]) current[1]=send;
           } else {
@@ -1083,6 +1135,10 @@ class TCPNode {
           this._log(`Advertencia: partnerNode no definido o seqNum inválido en FIN+ACK.`);
           return;
         }
+        // [NEW] Guardamos fin seq
+        if(!this.partnerFinSeq){
+          this.partnerFinSeq = this.partnerNode.seqNum;
+        }
         this.ackNum=this.partnerNode.seqNum+1;
         this._sendAck(simulationId,this.ackNum);
       } else if(this.state===this.states.ESTABLISHED){
@@ -1090,6 +1146,9 @@ class TCPNode {
         if(!this.partnerNode || typeof this.partnerNode.seqNum!=='number'){
           this._log(`Advertencia: partnerNode no definido o seqNum inválido en FIN+ACK (ESTABLISHED).`);
           return;
+        }
+        if(!this.partnerFinSeq){
+          this.partnerFinSeq = this.partnerNode.seqNum;
         }
         this.ackNum=this.partnerNode.seqNum+1;
         this._sendAck(simulationId,this.ackNum);
@@ -1360,7 +1419,14 @@ class TCPNode {
     },segInfo.originalParams.latency);
   }
 
+  // [CHANGED] Ahora ignoramos si ya estamos CLOSED o TIME_WAIT
   _handleRetransmission(seqNum,simulationId){
+    // [NEW] Si ya estamos en CLOSED o TIME_WAIT, no reenviamos
+    if(this.state===this.states.CLOSED || this.state===this.states.TIME_WAIT){
+      this._log(`Ignoramos retransmisión de seq=${seqNum}, estado=${this.state}`);
+      return;
+    }
+
     let segInfo=this.outstandingSegments.get(seqNum);
     if(!segInfo) return;
 
@@ -1409,7 +1475,9 @@ class TCPNode {
     this._timeWaitTimerId=setTimeout(()=>{
       this._log(`Expiró TIME_WAIT, cerrando conexión`);
       this.state=this.states.CLOSED;
+      // [NEW] Al cerrar, limpiamos timers y outstandingSegments
       this._cleanupTimers();
+      this._clearOutstandingSegments();
     },this.timeWaitDuration);
   }
 
@@ -1450,10 +1518,11 @@ class TCPNode {
   }
 
   _buildSACKBlocks(){
+    // [ORIGINAL: retorna siempre [] a modo de demo]
     return [];
   }
 
-  // [MODIFICADO] Acepta “isLost” como 5to parámetro
+  // Acepta “isLost” como 5to parámetro
   saveMessage(message,dataSize,simulationId,senderNodeId,isLost=false){
     const msgTimestamp=new Date().toISOString();
     const query=`
@@ -1490,6 +1559,35 @@ class TCPNode {
     );
   }
 
+  // [CHANGED] ACK puro no consume seqNum
+  _sendAck(simulationId,ackNum){
+    if(this.delayedAckTimerId){
+      clearTimeout(this.delayedAckTimerId);
+      this.delayedAckTimerId=null;
+      this.delayedAckSegments=0;
+    }
+    // Mantener seqNum para ACK puro
+    let ackSeq=this.seqNum;  
+    let flags={ACK:true};
+    let options={
+      MSS:this.MSS,
+      ipVersion:this.ipVersion
+    };
+    if(this.timestampsEnabled){
+      this.lastTSvalSent++;
+      options.TSval=this.lastTSvalSent;
+      options.TSecr=this.lastTSReply;
+    }
+    if(this.sackEnabled){
+      options.SACK=this._buildSACKBlocks();
+    }
+    const params=this._createMessageParameters(ackSeq,ackNum,0,flags,options);
+    let ackMessage=this._buildMessage(params);
+    this._log(`Enviando ACK (ackNum=${ackNum}) (seq=${ackSeq})`);
+    // isLost=false
+    this.sendMessage(ackMessage,0,simulationId);
+  }
+
   startSimulation(dataSize,simulationId){
     this.state=this.states.CLOSED;
     this.seqNum=Math.floor(Math.random()*10000);
@@ -1516,6 +1614,9 @@ class TCPNode {
     this.synAckRetries=0;
     this.timeoutCount=0;
 
+    // [NEW] Reset partnerFinSeq
+    this.partnerFinSeq=null;
+
     this._cleanupTimers();
 
     this._log(`Iniciando simulación con ${this.pendingDataSize} bytes por enviar.`);
@@ -1523,41 +1624,13 @@ class TCPNode {
     this.transition("start_simulation",simulationId);
   }
 
-  _sendAck(simulationId,ackNum){
-    if(this.delayedAckTimerId){
-      clearTimeout(this.delayedAckTimerId);
-      this.delayedAckTimerId=null;
-      this.delayedAckSegments=0;
-    }
-    this.ackNum=ackNum;
-    this.seqNum=this.nextSeqNum;
-    let flags={ACK:true};
-    let options={
-      MSS:this.MSS,
-      ipVersion:this.ipVersion
-    };
-    if(this.timestampsEnabled){
-      this.lastTSvalSent++;
-      options.TSval=this.lastTSvalSent;
-      options.TSecr=this.lastTSReply;
-    }
-    if(this.sackEnabled){
-      options.SACK=this._buildSACKBlocks();
-    }
-    const params=this._createMessageParameters(this.seqNum,ackNum,0,flags,options);
-    let ackMessage=this._buildMessage(params);
-    this._log(`Enviando ACK (ackNum=${ackNum})`);
-    // isLost=false
-    this.sendMessage(ackMessage,0,simulationId);
-  }
-
   _startKeepAliveTimer(simulationId){
     if(!this.keepAliveEnabled)return;
     clearTimeout(this.keepAliveTimerId);
     this.keepAliveTimerId=setTimeout(()=>{
       this._log(`Enviando keep-alive`);
-      this.seqNum=this.nextSeqNum;
-      this.ackNum=this.rcv_next;
+      let ackSeq=this.seqNum;
+      let ackNum=this.rcv_next;
       let flags={ACK:true};
       let options={
         MSS:this.MSS,
@@ -1568,7 +1641,7 @@ class TCPNode {
         options.TSval=this.lastTSvalSent;
         options.TSecr=this.lastTSReply;
       }
-      const params=this._createMessageParameters(this.seqNum,this.ackNum,0,flags,options);
+      const params=this._createMessageParameters(ackSeq,ackNum,0,flags,options);
       let kaMsg=this._buildMessage(params);
       this.sendMessage(kaMsg,0,simulationId);
       this._startKeepAliveTimer(simulationId);
@@ -1580,13 +1653,12 @@ class TCPNode {
     this._log(`Ventana cero detectada, iniciando persist timer`);
     this.persistTimerId=setTimeout(()=>{
       this._log(`Persist timer expiró, enviando sonda de persistencia`);
-      this.seqNum=this.nextSeqNum;
       let flags={};
       let options={
         MSS:this.MSS,
         ipVersion:this.ipVersion
       };
-      const params=this._createMessageParameters(this.seqNum,this.ackNum,1,flags,options);
+      const params=this._createMessageParameters(this.nextSeqNum,this.ackNum,1,flags,options);
       let probe=this._buildMessage(params);
       this.sendMessage(probe,1,simulationId);
       this.persistTimerId=null;
@@ -1645,7 +1717,6 @@ class TCPNode {
     }
     return null;
   }
-
 }
 
 module.exports = {
