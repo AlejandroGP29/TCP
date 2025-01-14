@@ -71,12 +71,12 @@ app.use(passport.session());
 // Almacén en memoria
 let simulations = {};
 
-function initNodes(simulationId) {
-  const nodeA = new TCPNode("A");
-  const nodeB = new TCPNode("B");
+function initNodes(simulationId, userID) {
+  const nodeA = new TCPNode("A", userID);
+  const nodeB = new TCPNode("B", userID);
   nodeA.setPartner(nodeB);
   nodeB.setPartner(nodeA);
-  nodeB.state = nodeB.states.LISTEN;
+  //nodeB.state = nodeB.states.LISTEN;
   simulations[simulationId] = { nodeA, nodeB };
 }
 
@@ -213,11 +213,11 @@ app.post("/enterSimulation", authenticateToken, async (req, res, next) => {
       });
     }
     if (row.parameter_settings == null) {
-      initNodes(simulator_id);
+      initNodes(simulator_id, req.user.id);
     } else {
       const param = JSON.parse(row.parameter_settings);
-      const nodeA = new TCPNode("A");
-      const nodeB = new TCPNode("B");
+      const nodeA = new TCPNode("A", req.user.id);
+      const nodeB = new TCPNode("B", req.user.id);
       nodeA.setNodeParameter(param.nodeA);
       nodeB.setNodeParameter(param.nodeB);
       nodeA.setPartner(nodeB);

@@ -323,11 +323,9 @@ class TCPNode {
     if (param.windowSize !== undefined) this.windowSize = param.windowSize;
     if (param.lossRatio !== undefined) this.lossRatio = param.lossRatio;
     if (param.MSS !== undefined) this.MSS = param.MSS;
-    if (param.seqNum !== undefined) {
-      this.seqNum = param.seqNum;
-      this.iss = param.seqNum;
-      this.initialSeqNum = param.seqNum;
-    }
+    if (param.seqNum !== undefined) this.seqNum = param.seqNum;
+    if (param.ackNum !== undefined) this.ackNum = param.ackNum;
+    if (param.initialSeqNum !== undefined) this.initialSeqNum = param.initialSeqNum;
     if (param.latency !== undefined) this.latency = param.latency;
   }
 
@@ -562,13 +560,13 @@ class TCPNode {
       this.nextSeqNum = this.iss + 1;
       // seqNum local para el ACK final
       this.seqNum = this.iss + 1;
-
+      this.ackNum = this.irs + 1
       if (this.synTimerId) {
         clearTimeout(this.synTimerId);
         this.synTimerId = null;
       }
       // Enviamos ACK final
-      this._sendAck(simulationId, this.irs + 1);
+      this._sendAck(simulationId, this.ackNum);
 
       this._scheduleDataOrClose(simulationId);
     }
@@ -579,8 +577,8 @@ class TCPNode {
       this._log(
         `En _handleSynReceived: Recibido ACK final del handshake. ackNum=${this.ackNum}, iss+1=${this.iss + 1}`
       );
-      if (this.ackNum !== this.iss + 1) {
-        this._log(`ACK final del handshake no válido (no coincide con iss+1)`);
+      if (this.ackNum !== this.irs + 1) {
+        this._log(`ACK final del handshake no válido (no coincide con irs+1)`);
         return;
       }
       this._log(`Recibido ACK final del handshake, estableciendo conexión`);
@@ -808,7 +806,7 @@ class TCPNode {
       this.delayedAckTimerId = null;
       this.delayedAckSegments = 0;
     }
-    let ackSeq = this.seqNum; // Nuestro seq
+    let ackSeq = this.nextSeqNum; // Nuestro seq
     let flags = { ACK: true };
     let options = { MSS: this.MSS, ipVersion: this.ipVersion };
 
@@ -984,7 +982,7 @@ class TCPNode {
       this.irs = packet.seqNum;
       // Actualizar ackNum al SYN entrante
       this.ackNum = packet.seqNum + 1;
-      this.nextSeqNum = Math.floor(Math.random() * 10000);
+      //this.nextSeqNum = Math.floor(Math.random() * 10000);
       this.iss = this.nextSeqNum;
 
       if (packet.options?.MSS && packet.options.MSS < this.peerMSS) {
@@ -1072,7 +1070,7 @@ class TCPNode {
       !packet.flags.RST
     ) {
       if (packet.ackNum === this.iss + 1) {
-        this.ackNum = packet.ackNum;
+        //this.ackNum = packet.ackNum;
         this.transition("recv_ack", simulationId);
         return;
       }
@@ -1741,8 +1739,8 @@ class TCPNode {
   /*       startSimulation(...)     */
   /**********************************/
   startSimulation(dataSize, simulationId) {
-    this.state = this.states.CLOSED;
-    this.seqNum = Math.floor(Math.random() * 10000);
+    //this.state = this.states.CLOSED;
+    //this.seqNum = Math.floor(Math.random() * 10000);
     this.sendBase = this.seqNum;
     this.nextSeqNum = this.seqNum;
     this.iss = this.seqNum;
