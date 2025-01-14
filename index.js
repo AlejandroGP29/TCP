@@ -305,9 +305,11 @@ app.post(
         sim.nodeB.iss = newB;
         sim.nodeB.initialSeqNum = newB;
       }
-
-      sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId);
-      sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId);
+      
+      await Promise.all([
+        sim.nodeA.startSimulation(parseInt(dataSizeA) || 0, simulationId),
+        sim.nodeB.startSimulation(parseInt(dataSizeB) || 0, simulationId),
+      ]);
 
       res.json({ success: true, message: "Simulación iniciada." });
     } catch (error) {
