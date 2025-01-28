@@ -16,14 +16,10 @@ let messageVerticalJitter = 5;
 let timeThresholdForJitter = 200;
 
 /********************************/
-// [MODIFICADO para 4 líneas de ventana/cwnd]
-// En lugar de windowDataA y windowDataB, tendremos 4 arrays:
-// 1) A-window  2) A-cwnd  3) B-window  4) B-cwnd
+// 1) A-data  2) B-data
 /********************************/
-let windowDataA = [];
-let cwndDataA = [];
-let windowDataB = [];
-let cwndDataB = [];
+let DataA = [];
+let DataB = [];
 
 // Tooltip D3
 let tooltip = null;
@@ -100,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("filter-syn")?.addEventListener("change", renderAll);
   document.getElementById("filter-ack")?.addEventListener("change", renderAll);
   document.getElementById("filter-fin")?.addEventListener("change", renderAll);
+  document.getElementById("filter-rst")?.addEventListener("change", renderAll);
   document.getElementById("filter-data")?.addEventListener("change", renderAll);
 
   // Zoom
@@ -725,10 +722,6 @@ function updateTCPParams(nodeId) {
         if (aSizePost) {
           aSizePost.textContent = sessionStorage.getItem("dataSizeA") || "--";
         }
-        // Guardamos puntos de A
-        const now = Date.now();
-        windowDataA.push({ time: now, value: data.windowSize });
-        cwndDataA.push({ time: now, value: data.cwnd });
       } else {
         const postB = document.getElementById("tcp-params-B-post");
         if (postB && data) {
@@ -746,13 +739,7 @@ function updateTCPParams(nodeId) {
         if (bSizePost) {
           bSizePost.textContent = sessionStorage.getItem("dataSizeB") || "--";
         }
-        // Guardamos puntos de B
-        const now = Date.now();
-        windowDataB.push({ time: now, value: data.windowSize });
-        cwndDataB.push({ time: now, value: data.cwnd });
       }
-
-      drawWindowChart();
     })
     .catch(handleError);
 }
@@ -916,23 +903,28 @@ function createTimeScale(data) {
 function renderAll() {
   if (!messageData || messageData.length === 0) return;
 
+  renderChart(messageData)
+  drawChart()
+
   arrowIdCounter = 1;
 
   createTimeScale(messageData);
   const synChecked = document.getElementById("filter-syn")?.checked;
   const ackChecked = document.getElementById("filter-ack")?.checked;
   const finChecked = document.getElementById("filter-fin")?.checked;
+  const rstChecked = document.getElementById("filter-rst")?.checked;
   const dataChecked = document.getElementById("filter-data")?.checked;
 
   const filtered = messageData.filter(m => {
     if (!m.param || !m.param.flags) return false;
     const flags = m.param.flags;
-    const isPureAck = (flags.ACK && !flags.SYN && !flags.FIN && m.len === 0);
-    const isData = (m.len > 0 && !flags.SYN && !flags.FIN && !isPureAck);
+    const isPureAck = (flags.ACK && !flags.SYN && !flags.FIN && !flags.RST && m.len === 0);
+    const isData = (m.len > 0 && !flags.SYN && !flags.FIN && !flags.RST && !isPureAck);
 
     if (flags.SYN && !synChecked) return false;
     if (isPureAck && !ackChecked) return false;
     if (flags.FIN && !finChecked) return false;
+    if (flags.RST && !rstChecked) return false;
     if (isData && !dataChecked) return false;
 
     return true;
@@ -993,7 +985,8 @@ function drawMessageArrow(entry, arrowId) {
   if (flags.SYN && flags.ACK) lineColor = "green";
   else if (flags.SYN) lineColor = "green";
   else if (flags.FIN) lineColor = "orange";
-  else if (flags.ACK && !flags.SYN && !flags.FIN && entry.len === 0) lineColor = "blue";
+  else if (flags.RST) lineColor = "violet";
+  else if (flags.ACK && !flags.SYN && !flags.FIN && !flags.RST && entry.len === 0) lineColor = "blue";
   if (isLost) {
     lineColor = "gray";
   }
@@ -1134,55 +1127,95 @@ function updateSVGHeight() {
 /********************************/
 /*  GRÁFICA DE VENTANA (4 LÍNEAS) */
 /********************************/
-function drawWindowChart() {
+function renderChart(data) {
+  if (!data || data.length === 0 || !timeScale) return;
+
+  DataA = [];
+  DataB = [];
+  data.sort((a, b) => a.startTime - b.startTime);
+
+  const aggregatedDataA = {};
+  const aggregatedDataB = {};
+
+  for (let i = 0; i < data.length; i++) {
+    let offsetCount = 0;
+
+    // Calcular jitter offset (opcional)
+    for (let j = 0; j < i; j++) {
+      const diff = data[i].startTime - data[j].startTime;
+      if (Math.abs(diff) < timeThresholdForJitter) {
+        offsetCount++;
+      }
+    }
+    data[i].jitterOffset = offsetCount * messageVerticalJitter;
+
+    // Procesar datos por nodo
+    timeScaleData = d3.scaleTime()
+    .domain([earliestTime, latestTime])
+    .range([50, 750]);
+    const timeKey = timeScaleData(data[i].arrivalTime); // Escalar el tiempo al dominio
+    const value = data[i].len;
+    if(!data[i].isLost){
+      if (data[i].node_id === "A") {
+        if (aggregatedDataA[timeKey]) {
+          aggregatedDataA[timeKey] += value; // Sumar si ya existe
+        } else {
+          aggregatedDataA[timeKey] = value; // Crear nueva entrada
+        }
+      } else if (data[i].node_id === "B") {
+        if (aggregatedDataB[timeKey]) {
+          aggregatedDataB[timeKey] += value; // Sumar si ya existe
+        } else {
+          aggregatedDataB[timeKey] = value; // Crear nueva entrada
+        }
+      }
+    }
+  }
+
+  // Convertir los datos agrupados en arreglos para DataA y DataB
+  DataA = Object.keys(aggregatedDataA).map(key => ({
+    time: +key, // Convertir clave (timeKey) de vuelta a número
+    value: aggregatedDataA[key]
+  }));
+
+  DataB = Object.keys(aggregatedDataB).map(key => ({
+    time: +key, // Convertir clave (timeKey) de vuelta a número
+    value: aggregatedDataB[key]
+  }));
+}
+
+
+
+function drawChart() {
   const windowChart = d3.select("#window-chart");
   if (!windowChart.node()) return;
 
   windowChart.selectAll("*").remove();
 
-  // [MODIFICADO] Reunimos TODOS los tiempos
+  // Reunimos TODOS los tiempos
   const allTimes = [
-    ...windowDataA.map(d => d.time),
-    ...cwndDataA.map(d => d.time),
-    ...windowDataB.map(d => d.time),
-    ...cwndDataB.map(d => d.time)
+    ...DataA.map(d => d.time),
+    ...DataB.map(d => d.time)
   ];
   if (allTimes.length === 0) return;
 
-  const minT = d3.min(allTimes);
-  const maxT = d3.max(allTimes);
+  // Determinar el rango exacto de tiempos presentes
+  const minT = new Date(d3.min(allTimes)); // Primer tiempo registrado
+  const maxT = new Date(d3.max(allTimes)); // Último tiempo registrado
 
-  // tomamos el máximo de la window y cwnd
-  const maxWindowVal = Math.max(
-    d3.max(windowDataA, d => d.value) || 0,
-    d3.max(cwndDataA, d => d.value) || 0,
-    d3.max(windowDataB, d => d.value) || 0,
-    d3.max(cwndDataB, d => d.value) || 0
-  );
-
+  // Escala para el eje X (sin márgenes)
   const xScale = d3.scaleTime()
-    .domain([new Date(minT), new Date(maxT)])
+    .domain([minT, maxT]) // Rango limitado a los tiempos de los datos
     .range([50, 750]);
+
+  const maxWindowVal = Math.max(
+    d3.max(DataA, d => d.value) || 0,
+    d3.max(DataB, d => d.value) || 0
+  );
 
   const yScale = d3.scaleLinear()
     .domain([0, maxWindowVal || 1])
     .range([150, 50]);
-
-  const lineAWindow = d3.line()
-    .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.value));
-
-  const lineACwnd = d3.line()
-    .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.value));
-
-  const lineBWindow = d3.line()
-    .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.value));
-
-  const lineBCwnd = d3.line()
-    .x(d => xScale(new Date(d.time)))
-    .y(d => yScale(d.value));
 
   // Eje base
   windowChart.append("line")
@@ -1196,80 +1229,75 @@ function drawWindowChart() {
     .attr("x", 400)
     .attr("y", 180)
     .attr("text-anchor", "middle")
-    .text("Evolución de Window Size y cwnd");
+    .text("Envió de datos en el tiempo");
 
-  // 1) Ventana A (azul)
-  if (windowDataA.length > 0) {
-    windowChart.append("path")
-      .datum(windowDataA)
-      .attr("d", lineAWindow)
-      .attr("stroke", "blue")
-      .attr("fill", "none");
+  // Dibujamos las líneas verticales para DataA (azul)
+  if (DataA.length > 0) {
+    DataA.forEach(d => {
+      const x = xScale(new Date(d.time));
+      const y = yScale(d.value);
+
+      windowChart.append("line")
+        .attr("x1", x)
+        .attr("y1", 150)
+        .attr("x2", x)
+        .attr("y2", y)
+        .attr("stroke", "blue")
+        .attr("stroke-width", 2);
+    });
 
     // Leyenda
     windowChart.append("text")
       .attr("x", 60)
       .attr("y", 40)
       .attr("fill", "blue")
-      .text("Nodo A - Window");
+      .text("Nodo A - Datos");
   }
 
-  // 2) cwnd A (azul oscuro)
-  if (cwndDataA.length > 0) {
-    windowChart.append("path")
-      .datum(cwndDataA)
-      .attr("d", lineACwnd)
-      .attr("stroke", "darkblue")
-      .attr("fill", "none");
+  // Dibujamos las líneas verticales para DataB (verde)
+  if (DataB.length > 0) {
+    DataB.forEach(d => {
+      const x = xScale(new Date(d.time));
+      const y = yScale(d.value);
 
-    windowChart.append("text")
-      .attr("x", 60)
-      .attr("y", 55)
-      .attr("fill", "darkblue")
-      .text("Nodo A - cwnd");
-  }
+      windowChart.append("line")
+        .attr("x1", x)
+        .attr("y1", 150)
+        .attr("x2", x)
+        .attr("y2", y)
+        .attr("stroke", "green")
+        .attr("stroke-width", 2);
+    });
 
-  // 3) Ventana B (verde)
-  if (windowDataB.length > 0) {
-    windowChart.append("path")
-      .datum(windowDataB)
-      .attr("d", lineBWindow)
-      .attr("stroke", "green")
-      .attr("fill", "none");
-
+    // Leyenda
     windowChart.append("text")
       .attr("x", 200)
       .attr("y", 40)
       .attr("fill", "green")
-      .text("Nodo B - Window");
+      .text("Nodo B - Datos");
   }
 
-  // 4) cwnd B (verde oscuro)
-  if (cwndDataB.length > 0) {
-    windowChart.append("path")
-      .datum(cwndDataB)
-      .attr("d", lineBCwnd)
-      .attr("stroke", "darkgreen")
-      .attr("fill", "none");
+  // Agregar los ejes
+  const xAxis = d3.axisBottom(xScale)
+    .ticks(8) // Solo en los puntos donde hay datos
+    .tickFormat(d3.timeFormat("%M:%S.%L")); // Formato de las etiquetas (Hora:Minuto:Segundo.Milisegundo)
 
-    windowChart.append("text")
-      .attr("x", 200)
-      .attr("y", 55)
-      .attr("fill", "darkgreen")
-      .text("Nodo B - cwnd");
-  }
-
-  const xAxis = d3.axisBottom(xScale).ticks(5).tickFormat(d3.timeFormat("%H:%M:%S"));
   const yAxis = d3.axisLeft(yScale).ticks(5);
 
   windowChart.append("g")
     .attr("transform", "translate(0,150)")
-    .call(xAxis);
+    .call(xAxis)
+    .selectAll("text")
+    .style("font-size", "10px");
 
   windowChart.append("g")
     .attr("transform", "translate(50,0)")
     .call(yAxis);
 }
+
+
+
+
 
 /********************************/
 /* LIMPIAR VISUAL E HISTORIAL   */
@@ -1280,10 +1308,8 @@ function clearVisualization() {
   d3.select("#window-chart").selectAll("*").remove();
 
   // [MODIFICADO] Limpiar arrays
-  windowDataA = [];
-  cwndDataA = [];
-  windowDataB = [];
-  cwndDataB = [];
+  DataA = [];
+  DataB = [];
 }
 
 function clearStateHistories() {

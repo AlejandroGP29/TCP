@@ -620,3 +620,9 @@ footer a:hover {
   text-align-last: center;
   margin-inline: 25%;
 }
+
+#window-chart-container{
+  text-align-last: center;
+  align-items: center;
+  justify-content: center;
+}
