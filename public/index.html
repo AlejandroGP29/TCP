@@ -269,7 +269,6 @@
             </li>
           </ul>
 
-          <h3>Controles</h3>
           <button id="start-simulation-btn">Iniciar Simulación</button>
           <button id="go-back-btn" class="secondary-btn">Volver a Selección de Simulaciones</button>
         </div>
@@ -282,24 +281,30 @@
           <div class="node-params-container">
             <div style="float:left; width:45%;">
               <h4>Parámetros Nodo A</h4>
-              <div id="tcp-params-A-post"></div>
-              <p><strong>Bytes Totales A:</strong> <span id="data-size-a-post"></span></p>
+              <div id = "param">
+                <p><strong>Estado A:</strong> <span id="current-state-A"></span></p>
+                <div id="tcp-params-A-post"></div>
+                <p><strong>Bytes Totales A:</strong> <span id="data-size-a-post"></span></p>
+              </div>
             </div>
-            <div style="float:right; width:45%;">
+            <div style="float:right; width:45%;justify-content: center;">
               <h4>Parámetros Nodo B</h4>
-              <div id="tcp-params-B-post"></div>
-              <p><strong>Bytes Totales B:</strong> <span id="data-size-b-post"></span></p>
+              <div id = "param">
+                <p><strong>Estado B:</strong> <span id="current-state-B"></span></p>
+                <div id="tcp-params-B-post"></div>
+                <p><strong>Bytes Totales B:</strong> <span id="data-size-b-post"></span></p>
+              </div>
             </div>
             <div style="clear:both;"></div>
           </div>
 
           <h3>Historial de Mensajes</h3>
           <div class="history-container">
-            <div>
+            <div id = "history-box">
               <h4>Nodo A</h4>
               <ul id="state-history-A" class="message-list"></ul>
             </div>
-            <div>
+            <div id = "history-box">
               <h4>Nodo B</h4>
               <ul id="state-history-B" class="message-list"></ul>
             </div>
@@ -315,9 +320,13 @@
           </fieldset>
 
           <h4>Zoom Temporal</h4>
-          <p>Ajusta la escala para ver eventos más juntos o separados:</p>
-          <input type="range" id="time-zoom-input" min="50" max="2000" value="200">
-          <span id="time-zoom-value">200</span>
+          <p>Ajusta la escala para ver eventos más juntos o separados:</p>          
+          <div class="input-container-zoom">
+            <button id="decrease-zoom">-</button>
+            <span id="time-zoom-value">200</span>
+            <button id="increase-zoom">+</button>
+          </div>
+          
 
           <div class="arrow-list-container">
             <div class="arrow-mess-container">

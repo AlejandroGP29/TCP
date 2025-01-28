@@ -377,6 +377,8 @@ input:focus, select:focus {
   border-radius:5px;
   max-height:200px;
   overflow:auto;
+  height: 222px;
+  margin-left: 0;
 }
 
 .visual-container {
@@ -529,10 +531,11 @@ footer a:hover {
   float: right;
   width: 300px;
   border: 1px solid #ccc;
-  margin-right: 20px;
+  margin-left: 5px;
+  padding-left: 20px;
+  padding-right: 20px;
   height: 400px;
   overflow-y: auto;
-  margin-top: 18px;
 }
 .arrow-item {
   margin-bottom: 5px;
@@ -573,4 +576,47 @@ footer a {
 }
 footer a:hover {
   text-decoration: underline;
+}
+
+.input-container-zoom {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  justify-content: center;
+}
+
+.input-container-zoom button {
+  padding: 5px 20px;
+  font-size: 20px;
+  cursor: pointer;
+  margin: 5px;
+}
+
+#time-zoom-value {
+  width: 50px;
+  text-align: center;
+  font-size: 16px;
+  padding: 5px;
+  display: none;
+}
+
+.history-container{
+  align-items: center;
+  justify-content: center;
+  height: 315px;
+}
+
+
+#history-box {
+  margin: 5px;
+  width: 40%;
+
+}
+
+#param{
+  width: 50%;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  text-align-last: center;
+  margin-inline: 25%;
 }

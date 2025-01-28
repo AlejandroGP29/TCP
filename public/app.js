@@ -83,13 +83,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   tooltip = d3.select("#tooltip");
-
+  
+  if(window.location.hash == "#logout") {logout();}
   initRouter();
   setupVisualSimulation();
   updateUserMenu();
   updateMainViewButtons();
   updateProfileView();
   setupHamburgerMenu();
+
+  if(sessionStorage.getItem("currentSimulationId")){
+    selectSimulation(sessionStorage.getItem("currentSimulationId"))
+  }
 
   // Filtros
   document.getElementById("filter-syn")?.addEventListener("change", renderAll);
@@ -98,10 +103,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("filter-data")?.addEventListener("change", renderAll);
 
   // Zoom
-  const zoomInput = document.getElementById("time-zoom-input");
-  if (zoomInput) {
-    zoomInput.addEventListener("input", () => {
-      document.getElementById("time-zoom-value").textContent = zoomInput.value;
+  const zoomInput = document.getElementById("time-zoom-value");
+  const decrease = document.getElementById("decrease-zoom");
+  const increase = document.getElementById("increase-zoom");
+  if (zoomInput && decrease && increase) {
+    decrease.addEventListener("click", () => {
+      if(zoomInput.textContent > 0){
+        document.getElementById("time-zoom-value").textContent = parseInt(zoomInput.textContent) - (50 * parseInt(zoomInput.textContent)/1000);
+        renderAll();
+      }
+    });
+
+    increase.addEventListener("click", () => {
+      document.getElementById("time-zoom-value").textContent = parseInt(zoomInput.textContent) + (50 * parseInt(zoomInput.textContent)/1000);
       renderAll();
     });
   }
@@ -171,6 +185,7 @@ function initRouter() {
   window.addEventListener("hashchange", () => {
     sessionStorage.setItem("lastHash", window.location.hash);
     showViewFromHash();
+    window.location.reload();
   });
   showViewFromHash();
 }
@@ -238,6 +253,7 @@ function showPostSimulation() {
   const postSim = document.getElementById("post-simulation");
   if (preSim) preSim.style.display = "none";
   if (postSim) postSim.style.display = "block";
+  initApp()
 }
 
 /********************************/
@@ -251,8 +267,9 @@ function updateUserMenu() {
       userIcon.textContent = "👤";
       userDropdown.innerHTML = `
         <a href="#profile">Perfil</a>
-        <a href="#logout" onclick="logout()">Cerrar Sesión</a>
+        <a href="#logout" id="logout">Cerrar Sesión</a>
       `;
+      document.getElementById("logout").addEventListener("click", () => logout());
     } else {
       userIcon.textContent = "🔓";
       userDropdown.innerHTML = `
@@ -322,7 +339,7 @@ function logout() {
   sessionStorage.removeItem("lastHash");
   token = null;
   updateUserMenu();
-  location.reload();
+  window.location.hash = 'main';
 }
 
 async function login() {
@@ -350,7 +367,7 @@ async function login() {
       updateMainViewButtons();
       updateProfileView();
       loadSimulations();
-      initApp();
+      //initApp();
       showToast("Inicio de sesión exitoso!");
     } else {
       handleError({ message: data.error?.message || "Error de login" });
@@ -406,7 +423,7 @@ async function autoLogin(username, password) {
       updateMainViewButtons();
       updateProfileView();
       loadSimulations();
-      initApp();
+      //initApp();
       showToast("Registro e inicio de sesión exitoso!");
     } else {
       handleError({ message: data.error?.message || "Error al iniciar sesión" });
@@ -487,7 +504,7 @@ function selectSimulation(simulationId) {
 
         clearVisualization();
         clearStateHistories();
-        initApp();
+        //initApp();
 
         // Revisar historial
         const historyResp = await fetchWithAuth("/history");
@@ -609,9 +626,6 @@ function startSimulation() {
 
         showPostSimulation();
         showToast("Simulación iniciada.");
-        setTimeout(() => {
-          getHistory();
-        }, 2000);
       }
     })
     .catch(handleError);
@@ -635,7 +649,9 @@ function startRealtimeUpdates() {
   stopRealtimeUpdates();
   updateInterval = setInterval(() => {
     const simulationId = sessionStorage.getItem("currentSimulationId");
-    if (!simulationId) {
+    currentStateA = document.getElementById(`current-state-A`);
+    currentStateB = document.getElementById(`current-state-B`);
+    if (!simulationId || (currentStateA.textContent =="CLOSED" && currentStateB.textContent =="CLOSED")) {
       stopRealtimeUpdates();
       return;
     }
@@ -891,7 +907,7 @@ function createTimeScale(data) {
     latestTime = new Date(earliestTime.getTime() + 1000);
   }
 
-  const zoomVal = document.getElementById("time-zoom-input")?.value || 200;
+  const zoomVal = document.getElementById("time-zoom-value")?.textContent || 200;
   timeScale = d3.scaleTime()
     .domain([earliestTime, latestTime])
     .range([50, parseInt(zoomVal)]);
@@ -951,6 +967,8 @@ function renderMessages(data) {
     const arrowId = arrowIdCounter++;
     drawMessageArrow(data[i], arrowId);
   }
+  
+  document.getElementById('arrow-list').style.height =`${46*data.length}px`;
   updateSVGHeight();
 }
 

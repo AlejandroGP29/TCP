@@ -611,6 +611,8 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
 
     parser.on("end", async () => {
       try {
+        const nodeA = {};
+        const nodeB = {};
         await db.runAsync("INSERT INTO Simulations (user_id) VALUES (?)", [req.user.id]);
         const row = await db.getAsync("SELECT last_insert_rowid() as lastID");
         const simulationId = row.lastID;
@@ -618,6 +620,8 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
         for (const p of packets) {
           const tcpInfo = parseTCPHeader(p);
           if (!tcpInfo) continue;
+
+          if(tcpInfo.latency == 0) tcpInfo.latency = 100;
 
           const node_id = tcpInfo.srcPort < tcpInfo.destPort ? "A" : "B";
           const msgParams = {
@@ -643,7 +647,37 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
              VALUES (?, ?, ?, ?, ?)`,
             [simulationId, node_id, msgTimestamp, JSON.stringify(messageTCP), tcpInfo.payloadLen]
           );
+
+          if(node_id == "A"){
+            if(nodeA.initialSeqNum > tcpInfo.seqNum || !nodeA.initialSeqNum) nodeA.initialSeqNum = tcpInfo.seqNum
+            nodeA.seqNum = tcpInfo.seqNum;
+            nodeA.ackNum = tcpInfo.ackNum;
+            nodeA.windowSize = tcpInfo.windowSize;
+            nodeA.latency = tcpInfo.latency;
+            nodeA.MSS = tcpInfo.MSS;
+            nodeA.srcPort = tcpInfo.srcPort;
+            nodeA.destPort = tcpInfo.destPort;
+          }else{
+            if(nodeB.initialSeqNum > tcpInfo.seqNum || !nodeB.initialSeqNum) nodeB.initialSeqNum = tcpInfo.seqNum
+            nodeB.seqNum = tcpInfo.seqNum;
+            nodeB.ackNum = tcpInfo.ackNum;
+            nodeB.windowSize = tcpInfo.windowSize;
+            nodeB.latency = tcpInfo.latency;
+            nodeB.MSS = tcpInfo.MSS;
+            nodeB.srcPort = tcpInfo.srcPort;
+            nodeB.destPort = tcpInfo.destPort;
+          }
         }
+
+        nodeA.nodeId = "A";
+        nodeB.nodeId = "B";
+        nodeA.state = "CLOSED";
+        nodeB.state = "CLOSED";
+        nodeA.lossRatio = "Real losses";
+        nodeB.lossRatio = "Real losses";
+        simulationParameters = JSON.stringify({ nodeA, nodeB });
+        await db.runAsync("UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?", [simulationParameters, simulationId, req.user.id]);
+
         fs.unlinkSync(pcapFilePath);
         res.json({ success: true, message: "Archivo Wireshark cargado correctamente.", simulationId });
       } catch (error) {

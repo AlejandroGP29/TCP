@@ -165,7 +165,7 @@ class TCPNode {
     this.lossRatio = 0.0;       // Probabilidad de pérdida en data
     this.ackReceived = false;
     this.pendingDataSize = 0;
-    this.MSL = 30000;
+    this.MSL = 3000; //30000
     this.timeWaitDuration = 2 * this.MSL;
     this.appCloseDelay = 0;
     this.closing = false;
@@ -320,6 +320,7 @@ class TCPNode {
   /**********************************/
   setNodeParameter(param) {
     if (!param || typeof param !== "object") return;
+    if (param.state !== undefined) this.state = param.state;
     if (param.windowSize !== undefined) this.windowSize = param.windowSize;
     if (param.lossRatio !== undefined) this.lossRatio = param.lossRatio;
     if (param.MSS !== undefined) this.MSS = param.MSS;
@@ -327,6 +328,12 @@ class TCPNode {
     if (param.ackNum !== undefined) this.ackNum = param.ackNum;
     if (param.initialSeqNum !== undefined) this.initialSeqNum = param.initialSeqNum;
     if (param.latency !== undefined) this.latency = param.latency;
+    if (param.cwnd !== undefined) this.cwnd = param.cwnd;
+    if (param.ssthresh !== undefined) this.ssthresh = param.ssthresh;
+    if (param.sendBase !== undefined) this.sendBase = param.sendBase;
+    if (param.nextSeqNum !== undefined) this.nextSeqNum = param.nextSeqNum;
+    if (param.srcPort !== undefined) this.srcPort = param.srcPort;
+    if (param.destPort !== undefined) this.destPort = param.destPort;
   }
 
   /**********************************/
@@ -615,12 +622,12 @@ class TCPNode {
 
   _handleFinWait1(action, simulationId) {
     if (action === "recv_ack") {
-      if (this.ackNum === this.finSeq + 1) {
+      if (this.confirmAck === this.finSeq + 1) {
         this._log(`Recibido ACK de nuestro FIN, pasando a FIN_WAIT_2`);
         this.state = this.states.FIN_WAIT_2;
       } else {
         this._log(
-          `ACK en FIN_WAIT_1 no es el de nuestro FIN (ackNum=${this.ackNum}, finSeq+1=${this.finSeq+1}), ignorando`
+          `ACK en FIN_WAIT_1 no es el de nuestro FIN (ackNum=${this.confirmAck}, finSeq+1=${this.finSeq+1}), ignorando`
         );
       }
     } else if (action === "recv_fin") {
@@ -652,16 +659,16 @@ class TCPNode {
 
   _handleLastAck(action, simulationId) {
     if (action === "recv_ack") {
-      if (this.ackNum === this.finSeq + 1) {
+      if (this.confirmAck === this.finSeq + 1) {
         this._log(`Recibido ACK válido en LAST_ACK, conexión cerrada`);
         this.state = this.states.CLOSED;
-      } else if (this.ackNum < this.finSeq + 1) {
+      } else if (this.confirmAck < this.finSeq + 1) {
         this._log(
-          `ACK en LAST_ACK con ackNum=${this.ackNum} < finSeq+1=${this.finSeq+1}. Es un ACK rezagado (no es para el FIN).`
+          `ACK en LAST_ACK con ackNum=${this.confirmAck} < finSeq+1=${this.finSeq+1}. Es un ACK rezagado (no es para el FIN).`
         );
       } else {
         this._log(
-          `ACK en LAST_ACK mayor a finSeq+1 (ackNum=${this.ackNum}, finSeq+1=${this.finSeq+1}). Ignorando.`
+          `ACK en LAST_ACK mayor a finSeq+1 (ackNum=${this.confirmAck}, finSeq+1=${this.finSeq+1}). Ignorando.`
         );
       }
     }
@@ -716,6 +723,7 @@ class TCPNode {
         this._log("Error en sendMessage(FIN est->finWait1): " + err.message)
       );
       this.nextSeqNum += 1;
+      this.seqNum = this.nextSeqNum
     } else if (this.state === this.states.CLOSE_WAIT) {
       this._log(`_checkIfCanClose: Todo ack. Cerrando desde CLOSE_WAIT -> LAST_ACK`);
       this.closing = true;
@@ -738,6 +746,7 @@ class TCPNode {
         this._log("Error en sendMessage(FIN closeWait->lastAck): " + err.message)
       );
       this.nextSeqNum += 1;
+      this.seqNum = this.nextSeqNum
     }
   }
 
@@ -1070,7 +1079,7 @@ class TCPNode {
       !packet.flags.RST
     ) {
       if (packet.ackNum === this.iss + 1) {
-        //this.ackNum = packet.ackNum;
+        this.confirmAck = packet.ackNum;
         this.transition("recv_ack", simulationId);
         return;
       }
@@ -1456,6 +1465,7 @@ class TCPNode {
             this.states.LAST_ACK,
           ].includes(this.state)
         ) {
+          this.confirmAck = packet.ackNum
           this.transition("recv_ack", simulationId);
         } else if (
           (this.state === this.states.ESTABLISHED || this.state === this.states.CLOSE_WAIT) &&
