@@ -613,6 +613,11 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
       try {
         const nodeA = {};
         const nodeB = {};
+        lastAckA = 0;
+        lastAckB = 0;
+        countA = 0;
+        countB = 0
+
         await db.runAsync("INSERT INTO Simulations (user_id) VALUES (?)", [req.user.id]);
         const row = await db.getAsync("SELECT last_insert_rowid() as lastID");
         const simulationId = row.lastID;
@@ -657,6 +662,10 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
             nodeA.MSS = tcpInfo.MSS;
             nodeA.srcPort = tcpInfo.srcPort;
             nodeA.destPort = tcpInfo.destPort;
+            if(lastAckB < tcpInfo.ackNum) lastAckB = tcpInfo.ackNum
+            if(tcpInfo.flags.SYN) countA++;
+            if(tcpInfo.flags.FIN) countA++;
+            if(tcpInfo.flags.RST) countA++;
           }else{
             if(nodeB.initialSeqNum > tcpInfo.seqNum || !nodeB.initialSeqNum) nodeB.initialSeqNum = tcpInfo.seqNum
             nodeB.seqNum = tcpInfo.seqNum;
@@ -666,6 +675,10 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
             nodeB.MSS = tcpInfo.MSS;
             nodeB.srcPort = tcpInfo.srcPort;
             nodeB.destPort = tcpInfo.destPort;
+            if(lastAckA < tcpInfo.ackNum) lastAckA = tcpInfo.ackNum
+            if(tcpInfo.flags.SYN) countB++;
+            if(tcpInfo.flags.FIN) countB++;
+            if(tcpInfo.flags.RST) countB++;
           }
         }
 
@@ -673,8 +686,10 @@ app.post("/uploadWireshark", authenticateToken, upload.single("wiresharkFile"), 
         nodeB.nodeId = "B";
         nodeA.state = "CLOSED";
         nodeB.state = "CLOSED";
-        nodeA.lossRatio = "Real losses";
-        nodeB.lossRatio = "Real losses";
+        nodeA.dataSize = lastAckA - nodeA.initialSeqNum - countA;
+        nodeB.dataSize = lastAckB - nodeB.initialSeqNum - countB;
+        nodeA.lossRatio = "Not applicable";
+        nodeB.lossRatio = "Not applicable";
         simulationParameters = JSON.stringify({ nodeA, nodeB });
         await db.runAsync("UPDATE Simulations SET parameter_settings = ? WHERE id = ? AND user_id = ?", [simulationParameters, simulationId, req.user.id]);
 

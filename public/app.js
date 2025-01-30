@@ -15,12 +15,6 @@ let timeScale = null;
 let messageVerticalJitter = 5;
 let timeThresholdForJitter = 200;
 
-/********************************/
-// 1) A-data  2) B-data
-/********************************/
-let DataA = [];
-let DataB = [];
-
 // Tooltip D3
 let tooltip = null;
 
@@ -718,9 +712,10 @@ function updateTCPParams(nodeId) {
             <p>cwnd: ${data.cwnd}</p>
           `;
         }
+        
         const aSizePost = document.getElementById("data-size-a-post");
         if (aSizePost) {
-          aSizePost.textContent = sessionStorage.getItem("dataSizeA") || "--";
+          aSizePost.textContent = data.dataSize;
         }
       } else {
         const postB = document.getElementById("tcp-params-B-post");
@@ -737,7 +732,7 @@ function updateTCPParams(nodeId) {
         }
         const bSizePost = document.getElementById("data-size-b-post");
         if (bSizePost) {
-          bSizePost.textContent = sessionStorage.getItem("dataSizeB") || "--";
+          bSizePost.textContent = data.dataSize;
         }
       }
     })
@@ -903,8 +898,8 @@ function createTimeScale(data) {
 function renderAll() {
   if (!messageData || messageData.length === 0) return;
 
-  renderChart(messageData)
-  drawChart()
+  const { DataA, DataB } = renderChart(messageData);
+  drawChart(DataA, DataB);
 
   arrowIdCounter = 1;
 
@@ -1128,172 +1123,175 @@ function updateSVGHeight() {
 /*  GRÁFICA DE VENTANA (4 LÍNEAS) */
 /********************************/
 function renderChart(data) {
-  if (!data || data.length === 0 || !timeScale) return;
+  if (!data || data.length === 0) return { DataA: [], DataB: [] };
+
+  let lastAckA = 0;
+  let lastAckB = 0;
+
+  let lastSeqA = 0;
+  let lastSeqB = 0;
 
   DataA = [];
   DataB = [];
-  data.sort((a, b) => a.startTime - b.startTime);
 
-  const aggregatedDataA = {};
-  const aggregatedDataB = {};
+  // Ordenamos todos los eventos por tiempo de llegada
+  data.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
-  for (let i = 0; i < data.length; i++) {
-    let offsetCount = 0;
-
-    // Calcular jitter offset (opcional)
-    for (let j = 0; j < i; j++) {
-      const diff = data[i].startTime - data[j].startTime;
-      if (Math.abs(diff) < timeThresholdForJitter) {
-        offsetCount++;
-      }
-    }
-    data[i].jitterOffset = offsetCount * messageVerticalJitter;
-
-    // Procesar datos por nodo
-    timeScaleData = d3.scaleTime()
-    .domain([earliestTime, latestTime])
-    .range([50, 750]);
-    const timeKey = timeScaleData(data[i].arrivalTime); // Escalar el tiempo al dominio
-    const value = data[i].len;
-    if(!data[i].isLost){
-      if (data[i].node_id === "A") {
-        if (aggregatedDataA[timeKey]) {
-          aggregatedDataA[timeKey] += value; // Sumar si ya existe
-        } else {
-          aggregatedDataA[timeKey] = value; // Crear nueva entrada
+  data.forEach(evt => {
+    let param = evt.param
+    if(!param.isLost){
+      if (evt.node_id === "A") {
+        if (param.flags.ACK) {
+          lastAckA = param.ackNum;
         }
-      } else if (data[i].node_id === "B") {
-        if (aggregatedDataB[timeKey]) {
-          aggregatedDataB[timeKey] += value; // Sumar si ya existe
-        } else {
-          aggregatedDataB[timeKey] = value; // Crear nueva entrada
+        lastSeqB = param.seqNum + evt.len
+        if(lastAckB == 0){
+          lastAckB = lastSeqB
+        }
+      }
+      else if (evt.node_id === "B") {
+        if (param.flags.ACK) {
+          lastAckB = param.ackNum;
+        }
+        lastSeqA = param.seqNum + evt.len
+        if(lastAckA == 0){
+          lastAckA = lastSeqA
         }
       }
     }
-  }
-
-  // Convertir los datos agrupados en arreglos para DataA y DataB
-  DataA = Object.keys(aggregatedDataA).map(key => ({
-    time: +key, // Convertir clave (timeKey) de vuelta a número
-    value: aggregatedDataA[key]
-  }));
-
-  DataB = Object.keys(aggregatedDataB).map(key => ({
-    time: +key, // Convertir clave (timeKey) de vuelta a número
-    value: aggregatedDataB[key]
-  }));
+    DataA.push({ time: evt.arrivalTime, value: lastSeqA - lastAckA });
+    DataB.push({ time: evt.arrivalTime, value: lastSeqB - lastAckB });
+  });
+  return { DataA, DataB };
 }
 
 
 
-function drawChart() {
+function drawChart(DataA, DataB) {
   const windowChart = d3.select("#window-chart");
   if (!windowChart.node()) return;
 
+  // Limpia el gráfico anterior
   windowChart.selectAll("*").remove();
 
-  // Reunimos TODOS los tiempos
+  // -- Preparar escalas --
+
+  // Recolectamos todos los tiempos
   const allTimes = [
     ...DataA.map(d => d.time),
     ...DataB.map(d => d.time)
   ];
   if (allTimes.length === 0) return;
 
-  // Determinar el rango exacto de tiempos presentes
-  const minT = new Date(d3.min(allTimes)); // Primer tiempo registrado
-  const maxT = new Date(d3.max(allTimes)); // Último tiempo registrado
+  const xDomain = d3.extent(allTimes);
 
-  // Escala para el eje X (sin márgenes)
+  // Obtenemos el máximo valor de entre las dos series
+  const maxValueA = d3.max(DataA, d => d.value) || 0;
+  const maxValueB = d3.max(DataB, d => d.value) || 0;
+  const maxVal = Math.max(maxValueA, maxValueB);
+
+  // Dimensiones del SVG
+  const width = 800;
+  const height = 200;
+  const margin = { top: 20, right: 20, bottom: 30, left: 50 };
+
+  // Escala X (tiempo)
   const xScale = d3.scaleTime()
-    .domain([minT, maxT]) // Rango limitado a los tiempos de los datos
-    .range([50, 750]);
+    .domain(xDomain)
+    .range([margin.left, width - margin.right]);
 
-  const maxWindowVal = Math.max(
-    d3.max(DataA, d => d.value) || 0,
-    d3.max(DataB, d => d.value) || 0
-  );
-
+  // Escala Y (valor)
   const yScale = d3.scaleLinear()
-    .domain([0, maxWindowVal || 1])
-    .range([150, 50]);
+    .domain([0, maxVal])
+    .range([height - margin.bottom, margin.top]);
 
-  // Eje base
-  windowChart.append("line")
-    .attr("x1", 50)
-    .attr("y1", 150)
-    .attr("x2", 750)
-    .attr("y2", 150)
-    .attr("stroke", "#ccc");
+  // Creamos el SVG si no existe, o lo seleccionamos
+  const svg = windowChart
+    .attr("width", width)
+    .attr("height", height);
 
-  windowChart.append("text")
-    .attr("x", 400)
-    .attr("y", 180)
-    .attr("text-anchor", "middle")
-    .text("Envió de datos en el tiempo");
-
-  // Dibujamos las líneas verticales para DataA (azul)
-  if (DataA.length > 0) {
-    DataA.forEach(d => {
-      const x = xScale(new Date(d.time));
-      const y = yScale(d.value);
-
-      windowChart.append("line")
-        .attr("x1", x)
-        .attr("y1", 150)
-        .attr("x2", x)
-        .attr("y2", y)
-        .attr("stroke", "blue")
-        .attr("stroke-width", 2);
-    });
-
-    // Leyenda
-    windowChart.append("text")
-      .attr("x", 60)
-      .attr("y", 40)
-      .attr("fill", "blue")
-      .text("Nodo A - Datos");
-  }
-
-  // Dibujamos las líneas verticales para DataB (verde)
-  if (DataB.length > 0) {
-    DataB.forEach(d => {
-      const x = xScale(new Date(d.time));
-      const y = yScale(d.value);
-
-      windowChart.append("line")
-        .attr("x1", x)
-        .attr("y1", 150)
-        .attr("x2", x)
-        .attr("y2", y)
-        .attr("stroke", "green")
-        .attr("stroke-width", 2);
-    });
-
-    // Leyenda
-    windowChart.append("text")
-      .attr("x", 200)
-      .attr("y", 40)
-      .attr("fill", "green")
-      .text("Nodo B - Datos");
-  }
-
-  // Agregar los ejes
+  // Eje X
   const xAxis = d3.axisBottom(xScale)
-    .ticks(8) // Solo en los puntos donde hay datos
-    .tickFormat(d3.timeFormat("%M:%S.%L")); // Formato de las etiquetas (Hora:Minuto:Segundo.Milisegundo)
+    .ticks(8)
+    .tickFormat(d3.timeFormat("%H:%M:%S"));
 
+  svg.append("g")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(xAxis);
+
+  // Eje Y
   const yAxis = d3.axisLeft(yScale).ticks(5);
 
-  windowChart.append("g")
-    .attr("transform", "translate(0,150)")
-    .call(xAxis)
-    .selectAll("text")
-    .style("font-size", "10px");
-
-  windowChart.append("g")
-    .attr("transform", "translate(50,0)")
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
     .call(yAxis);
+
+  // Generador de línea para DataA
+  const lineA = d3.line()
+    .x(d => xScale(d.time))
+    .y(d => yScale(d.value))
+    // Usamos stepAfter para mantener el valor hasta el siguiente punto
+    .curve(d3.curveStepAfter);
+
+  // Generador de línea para DataB
+  const lineB = d3.line()
+    .x(d => xScale(d.time))
+    .y(d => yScale(d.value))
+    .curve(d3.curveStepAfter);
+
+  // Dibujar la línea para DataA (azul)
+  if (DataA.length > 1) {
+    svg.append("path")
+      .datum(DataA)
+      .attr("fill", "none")
+      .attr("stroke", "blue")
+      .attr("stroke-width", 2)
+      .attr("d", lineA);
+  }
+
+  // Dibujar la línea para DataB (verde)
+  if (DataB.length > 1) {
+    svg.append("path")
+      .datum(DataB)
+      .attr("fill", "none")
+      .attr("stroke", "green")
+      .attr("stroke-width", 2)
+      .attr("d", lineB);
+  }
+
+  // Leyendas o etiquetas
+  svg.append("text")
+    .attr("x", margin.left)
+    .attr("y", margin.top - 5)
+    .attr("fill", "blue")
+    .style("font-size", "12px")
+    .text("Nodo A");
+
+  svg.append("text")
+    .attr("x", margin.left + 60)
+    .attr("y", margin.top - 5)
+    .attr("fill", "green")
+    .style("font-size", "12px")
+    .text("Nodo B");
+
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height)
+    .attr("text-anchor", "middle")
+    .style("font-size", "12px")
+    .text("Tiempo");
+
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -(height / 2))
+    .attr("y", 15)
+    .style("text-anchor", "middle")
+    .style("font-size", "12px")
+    .text("Tamaño de ventana (bytes)");
 }
+
+
+
 
 
 

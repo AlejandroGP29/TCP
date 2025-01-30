@@ -160,6 +160,7 @@ class TCPNode {
     this.MTU = 1500;
     this.MSS = 1460;     // Por defecto, ajustable
     this.peerMSS = 1460; // Se ajusta al recibir SYN con MSS
+    this.DataSize = 0;
 
     this.handshakeLossRatio = 0; // Probabilidad de pérdida de SYN / SYN+ACK / ACK handshake
     this.lossRatio = 0.0;       // Probabilidad de pérdida en data
@@ -334,6 +335,7 @@ class TCPNode {
     if (param.nextSeqNum !== undefined) this.nextSeqNum = param.nextSeqNum;
     if (param.srcPort !== undefined) this.srcPort = param.srcPort;
     if (param.destPort !== undefined) this.destPort = param.destPort;
+    if (param.dataSize !== undefined) this.dataSize = param.dataSize;
   }
 
   /**********************************/
@@ -356,6 +358,7 @@ class TCPNode {
       nextSeqNum: this.nextSeqNum,
       srcPort: this.srcPort,
       destPort: this.destPort,
+      dataSize: this.dataSize,
     };
   }
 
@@ -1762,6 +1765,7 @@ class TCPNode {
     this.buffer = 0;
     this.cwnd = this.MSS;
     this.ssthresh = 64 * this.MSS;
+    this.dataSize = Number(dataSize) || 0;
 
     this.RTO = 3000;
     this.SRTT = null;
