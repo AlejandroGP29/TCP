@@ -616,7 +616,7 @@ class TCPNode {
     } else if (action === "recv_fin") {
       this._log(`Recibido FIN del partner, cerrando hacia CLOSE_WAIT`);
       this.state = this.states.CLOSE_WAIT;
-      this._scheduleDataOrClose(simulationId);
+      //this._scheduleDataOrClose(simulationId);
     } else if (action === "close_connection") {
       this.closeRequested = true;
       this._checkIfCanClose(simulationId);
@@ -818,6 +818,7 @@ class TCPNode {
       this.delayedAckTimerId = null;
       this.delayedAckSegments = 0;
     }
+    this.ackNum = ackNum
     let ackSeq = this.nextSeqNum; // Nuestro seq
     let flags = { ACK: true };
     let options = { MSS: this.MSS, ipVersion: this.ipVersion };
@@ -2035,12 +2036,14 @@ class TCPNode {
     );
     let message = this._buildMessage(params);
 
+    this.nextSeqNum += segmentSize;
+    this.pendingDataSize -= segmentSize;
+    
     this.sendMessage(message, segmentSize, simulationId).catch((err) =>
       this._log("Error en sendMessage(_actuallySendSegment): " + err.message)
     );
 
-    this.nextSeqNum += segmentSize;
-    this.pendingDataSize -= segmentSize;
+    
 
     if (this.pendingDataSize > 0) {
       this._scheduleDataSend(simulationId);
