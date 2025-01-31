@@ -21,6 +21,12 @@ let tooltip = null;
 // Contador global de flechas
 let arrowIdCounter = 1;
 
+//Maquina de estdos
+let isRecibedSYN = false
+let isRecibedFIN = false
+let isRecibedACKFIN = false
+let isRecibedACKFIN2 = false
+
 /********************************/
 /* LOADER Y TOASTS              */
 /********************************/
@@ -925,10 +931,12 @@ function renderAll() {
     return true;
   });
 
-  renderMessages(filtered);
+  const transitionsByMessageId  = calcularEstadosTCP(messageData);
+
+  renderMessages(filtered, transitionsByMessageId);
 }
 
-function renderMessages(data) {
+function renderMessages(data, transitionsMap) {
   const svg = d3.select("#simulation-visual");
   svg.selectAll("g[id^='message-']").remove();
 
@@ -952,14 +960,14 @@ function renderMessages(data) {
     data[i].jitterOffset = offsetCount * messageVerticalJitter;
 
     const arrowId = arrowIdCounter++;
-    drawMessageArrow(data[i], arrowId);
+    drawMessageArrow(data[i], arrowId, transitionsMap);
   }
   
   document.getElementById('arrow-list').style.height =`${46*data.length}px`;
   updateSVGHeight();
 }
 
-function drawMessageArrow(entry, arrowId) {
+function drawMessageArrow(entry, arrowId, transitionsMap) {
   const svg = d3.select("#simulation-visual");
   const group = svg.append("g").attr("id", `message-${entry.id}`);
 
@@ -1067,6 +1075,50 @@ function drawMessageArrow(entry, arrowId) {
     arrowItem.textContent = `ID=#${arrowId}, node_id=${entry.node_id}, seq=${param.seqNum}, ack=${param.ackNum}, flags=${Object.keys(flags).filter(f=>flags[f]).join(",")}, len=${entry.len}, lost=${isLost||false}`;
     arrowList.appendChild(arrowItem);
   }
+
+
+  const transitions = transitionsMap[entry.id] || [];
+  if (transitions.length > 0) {
+    let offsetA = -5;
+    let offsetB = -5;
+
+    transitions.forEach(t => {
+      const transitionText = `${t.state}`;
+
+      let labelX, labelY;
+
+      if (t.node === "A") {
+        const isSenderOfThisMessage = (entry.node_id === "A");
+        if (isSenderOfThisMessage) {
+          labelX = xA - 10; 
+          labelY = yStart + offsetA;
+        } else {
+          labelX = xA - 10;
+          labelY = yEnd + offsetA;
+        }
+        offsetA -= 14; 
+      } 
+      else if (t.node === "B") {
+        const isSenderOfThisMessage = (entry.node_id === "B");
+        if (isSenderOfThisMessage) {
+          labelX = xB + 10;
+          labelY = yStart + offsetB;
+        } else {
+          labelX = xB + 10;
+          labelY = yEnd + offsetB;
+        }
+        offsetB -= 14;
+      }
+      
+      group.append("text")
+        .attr("x", labelX)
+        .attr("y", labelY)
+        .attr("font-size", "12px")
+        .attr("fill", "black")
+        .attr("text-anchor", (t.node === "A") ? "end" : "start")
+        .text(transitionText);
+    });
+  }
 }
 
 function updateSVGHeight() {
@@ -1119,8 +1171,167 @@ function updateSVGHeight() {
   }
 }
 
+function calcularEstadosTCP(messages) {
+  let currentStateA = "CLOSED";
+  let currentStateB = "CLOSED";
+  let transitionsByMessageId = {};
+
+  messages.sort((a, b) => a.startTime - b.startTime);
+  function registrarTransicion(msgId, node, newSt) {
+    if (!transitionsByMessageId[msgId]) {
+      transitionsByMessageId[msgId] = [];
+    }
+    transitionsByMessageId[msgId].push({
+      node: node,
+      state: newSt
+    });
+  }
+
+  messages.forEach(msg => {
+    if(!msg.isLost){
+      const flags = msg.param?.flags || {};
+      const involvesA = (msg.node_id === "A");
+      const involvesB = (msg.node_id === "B");
+
+      let oldStateA = currentStateA;
+      let oldStateB = currentStateB;
+
+      if (involvesA) {
+        currentStateA = nextTCPState(oldStateA, flags);
+        if (currentStateA !== oldStateA) {
+          registrarTransicion(msg.id, "A", currentStateA);
+        }
+      }
+
+      if (involvesB) {
+        currentStateB = nextTCPState(oldStateB, flags);
+        if (currentStateB !== oldStateB) {
+          registrarTransicion(msg.id, "B", currentStateB);
+        }
+      }
+      
+    }
+    
+  });
+
+  return transitionsByMessageId;
+}
+
+
+function nextTCPState(oldState, flags) {
+  let newState = oldState;
+
+  if (flags.RST) {
+    return "CLOSED"; 
+  }
+
+  switch (oldState) {
+    // ------------------------------------
+    case "CLOSED":
+      if (flags.SYN  && flags.ACK) {
+        newState = "SYN_RCVD";
+      } else if (flags.SYN) {
+        newState = "SYN_SENT";
+      }
+      break;
+
+    // ------------------------------------
+    case "SYN_SENT":
+      if (flags.FIN) {
+        // Recibe SYN+ACK del otro lado
+        newState = "FIN_WAIT_1";
+        isRecibedACK = true;
+      }
+      else if (flags.ACK) {
+        // Recibe SYN+ACK del otro lado
+        newState = "ESTABLISHED";
+        isRecibedACK = true;
+      }
+      break;
+
+    // ------------------------------------
+    case "SYN_RCVD":
+      if (flags.FIN && isRecibedACK) {
+        // Recibe SYN+ACK del otro lado
+        newState = "FIN_WAIT_1";
+        isRecibedACK = false;
+      }
+      else if (isRecibedACK) {
+        newState = "ESTABLISHED";
+        isRecibedACK = false;
+      }
+      break;
+
+    // ------------------------------------
+    case "ESTABLISHED":
+      if (flags.FIN && !isRecibedFIN) {
+        newState = "FIN_WAIT_1";
+        isRecibedFIN = true;
+      } else if (flags.ACK && isRecibedFIN) {
+        newState = "CLOSE_WAIT";
+        isRecibedFIN = false;
+        isRecibedACKFIN = true;
+      }
+      break;
+
+    // ------------------------------------
+    case "FIN_WAIT_1":
+      if (flags.ACK && !isRecibedFIN) {
+        // Si recibimos FIN estando en FIN_WAIT_1, pasamos a CLOSING
+        isRecibedACKFIN2 = true;
+        newState = "CLOSING";
+      } else if (isRecibedACKFIN) {
+        // ACK a nuestro FIN
+        newState = "FIN_WAIT_2";
+      }
+      break;
+
+    // ------------------------------------
+    case "FIN_WAIT_2":
+      if (flags.ACK && isRecibedACKFIN) {
+        newState = "TIME_WAIT";
+        isRecibedACKFIN = false;
+        isRecibedACKFIN2 = true;
+      }
+      break;
+
+    // ------------------------------------
+    case "CLOSING":
+      if (isRecibedACKFIN) {
+        // Tras CLOSING, cuando llega el ACK final
+        newState = "TIME_WAIT";
+        isRecibedACKFIN = false;
+      }
+      break;
+
+    // ------------------------------------
+    case "TIME_WAIT":
+      // Normalmente pasamos a CLOSED tras un timeout,
+      break;
+
+    // ------------------------------------
+    case "CLOSE_WAIT":
+      if (flags.FIN) {
+        newState = "LAST_ACK";
+      }
+      break;
+
+    // ------------------------------------
+    case "LAST_ACK":
+      if (isRecibedACKFIN2) {
+        newState = "CLOSED";
+        isRecibedACKFIN2 = false
+      }
+      break;
+  }
+
+  return newState;
+}
+
+
+
 /********************************/
-/*  GRÁFICA DE VENTANA (4 LÍNEAS) */
+/*  GRÁFICA DE VENTANA */
 /********************************/
 function renderChart(data) {
   if (!data || data.length === 0) return { DataA: [], DataB: [] };
